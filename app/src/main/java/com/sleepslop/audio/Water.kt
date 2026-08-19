@@ -526,11 +526,11 @@ class RainV2 : SoundGenerator {
     }
 
     private companion object {
-        const val WASH_GAIN = 0.90f
-        const val PATTER_GAIN = 0.170f
-        const val SPLAT_GAIN = 0.150f
-        const val HISS_GAIN = 0.170f
-        const val PLOP_GAIN = 0.23f
+        const val WASH_GAIN = 0.83f
+        const val PATTER_GAIN = 0.157f
+        const val SPLAT_GAIN = 0.138f
+        const val HISS_GAIN = 0.157f
+        const val PLOP_GAIN = 0.21f
     }
 }
 
@@ -622,7 +622,7 @@ private class Wave(seed: Int, startU: Float, pan: Float) {
         val s = shape(u)
         // `base` is the floor the wave never drops below — raising swell lowers
         // it, which is what "more dynamics" means here.
-        val base = 0.50f - 0.34f * swellS
+        val base = 0.55f - 0.34f * swellS
         // A lowpass passes noise power roughly proportional to its cutoff, so
         // sweeping 190 Hz → 3.3 kHz would swing the level ~12 dB on its own and
         // blow the gentleness budget. Undo most of that (exponent 0.40 rather
@@ -782,9 +782,9 @@ class OceanV2 : SoundGenerator {
     }
 
     private companion object {
-        const val WAVE_GAIN = 0.55f
-        const val BED_GAIN = 0.185f
-        const val FOAM_GAIN = 0.115f
+        const val WAVE_GAIN = 0.495f
+        const val BED_GAIN = 0.215f
+        const val FOAM_GAIN = 0.109f
         const val MAX_FIZZ_PER_SEC = 420f
     }
 }
@@ -1035,9 +1035,14 @@ class WaterDropsV2 : SoundGenerator {
             // Pure gating multiplies noise by a Poisson sum, whose product has a
             // very heavy tail — that is what turns a quiet bed into occasional
             // spikes. A floor of 0.5 keeps the crest factor near Gaussian.
-            val tl = trickleBpL.process(rnd.bip()) * (0.50f + 0.75f * trickleEnv[0]) * trickleGain +
+            // ...and the modulator is capped, because a rare pile-up of grains
+            // should not be audibly louder than a busy stream — without the cap
+            // the Poisson tail shows up as isolated spikes.
+            val tmL = (0.75f + 0.50f * trickleEnv[0]).coerceAtMost(1.7f)
+            val tmR = (0.75f + 0.50f * trickleEnv[1]).coerceAtMost(1.7f)
+            val tl = trickleBpL.process(rnd.bip()) * tmL * trickleGain +
                 hollowL.process(rnd.bip()) * hollowGain
-            val tr = trickleBpR.process(rnd.bip()) * (0.50f + 0.75f * trickleEnv[1]) * trickleGain +
+            val tr = trickleBpR.process(rnd.bip()) * tmR * trickleGain +
                 hollowR.process(rnd.bip()) * hollowGain
 
             // Makeup gain: sparse plinks need headroom to read at mix level.
@@ -1047,10 +1052,10 @@ class WaterDropsV2 : SoundGenerator {
     }
 
     private companion object {
-        const val DROP_GAIN = 0.24f
+        const val DROP_GAIN = 0.22f
         const val WET_GAIN = 0.60f
-        const val TRICKLE_GAIN = 0.30f
-        const val HOLLOW_GAIN = 0.075f
+        const val TRICKLE_GAIN = 0.37f
+        const val HOLLOW_GAIN = 0.095f
         const val MAX_TRICKLE_PER_SEC = 1400f
     }
 }

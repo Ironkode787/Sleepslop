@@ -42,6 +42,8 @@ object WakeRoutine {
     private const val BIRDS_START = 0.05f
     private const val BIRDS_END = 0.75f
     private const val CHIMES_END = 0.25f
+    private const val DAWN_ACTIVITY_START = 0.3f
+    private const val DAWN_ACTIVITY_END = 1f
 
     /** Master volume is lifted to at least this by the wake time. */
     private const val MASTER_FLOOR = 0.75f
@@ -122,6 +124,7 @@ object WakeRoutine {
         if (!AudioEngine.isPlaying.value) AudioEngine.play()
         ensureOn(Sound.BIRDS, BIRDS_START)
         ensureOn(Sound.CHIMES, 0f)
+        AudioEngine.setParam(Sound.BIRDS, "activity", DAWN_ACTIVITY_START)
 
         val begin = System.currentTimeMillis()
         val span = (wakeAt - begin).coerceAtLeast(1L)
@@ -138,6 +141,12 @@ object WakeRoutine {
             }
             AudioEngine.setVolume(Sound.BIRDS, BIRDS_START + (BIRDS_END - BIRDS_START) * progress)
             AudioEngine.setVolume(Sound.CHIMES, CHIMES_END * progress)
+            // The chorus itself wakes up too: more birds, faster phrases.
+            AudioEngine.setParam(
+                Sound.BIRDS,
+                "activity",
+                DAWN_ACTIVITY_START + (DAWN_ACTIVITY_END - DAWN_ACTIVITY_START) * progress,
+            )
             if (startMaster < MASTER_FLOOR) {
                 AudioEngine.setMasterVolume(
                     startMaster + (MASTER_FLOOR - startMaster) * progress
