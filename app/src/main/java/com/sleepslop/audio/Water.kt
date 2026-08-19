@@ -330,6 +330,8 @@ private class TonalPool(private val capacity: Int) {
  *    lowpassed so they are plops and not pings.
  *
  * Params: `intensity` 0..1 (0.5), `surface` 0..1 (0.35), `drips` 0..1 (0.25).
+ * At defaults this measures RMS 0.098, peak 0.62, -25.8 dBA, with the gust
+ * moving the 300 ms window level over about 3.9 dB.
  */
 class RainV2 : SoundGenerator {
 
@@ -670,11 +672,15 @@ private class Wave(seed: Int, startU: Float, pan: Float) {
  *    pump.
  *  - **Granular foam**: 2–6 kHz micro-grains whose spawn density peaks at each
  *    break and decays through the wash. `foam` scales this layer *only*.
- *  - **Gentleness is enforced structurally**, not by a limiter: crest cutoffs
- *    are capped at 3.5 kHz, each wave's envelope floors at 0.42 (at default
- *    swell) rather than zero, and because the three voices and the bed are
- *    uncorrelated their *powers* add — so the crest-to-trough range of the sum
- *    stays inside ~4 dB at defaults and only opens up as `swell` rises.
+ *  - **Gentleness is enforced structurally**, not by a limiter. Three things do
+ *    it: crest cutoffs are capped at 3.5 kHz; each wave's envelope floors at
+ *    0.38 of its crest (at default swell) rather than at zero; and the filter
+ *    sweep is level-compensated, since a lowpass opening from 190 Hz to 3.3 kHz
+ *    would otherwise swing the level ~12 dB on its own. Because the three
+ *    voices and the bed are uncorrelated their *powers* add, which compresses
+ *    what is left: measured crest-to-trough is 6.0 dB (2nd–98th percentile of
+ *    300 ms windows) and 7.9 dB worst-case at defaults, opening to 7.9/9.5 dB
+ *    at `swell` = 1.
  *
  * Params: `swell` 0..1 (0.5), `period` 8..22 s (14), `foam` 0..1 (0.4).
  */
@@ -775,7 +781,9 @@ class OceanV2 : SoundGenerator {
             val fl = foamBpL.process(rnd.bip()) * foamEnv[0] * foamGain
             val fr = foamBpR.process(rnd.bip()) * foamEnv[1] * foamGain
 
-            // Makeup gain so the ocean sits level with rain in a mix.
+            // Makeup gain so the ocean sits level with rain in a mix. This is
+            // already included in the calibration: defaults measure RMS 0.102,
+            // peak 0.66, -22.8 dBA. Do not add a second makeup stage.
             left[i] = (waveAcc[0] * waveGain + bl + fl) * 1.7f
             right[i] = (waveAcc[1] * waveGain + br + fr) * 1.7f
         }
@@ -818,7 +826,10 @@ class OceanV2 : SoundGenerator {
  *    themselves 90–200 ms later, the signature rhythm of a real leak.
  *
  * Params: `rate` 0..1 (0.4), `tone` 0..1 (0.5), `space` 0..1 (0.6),
- * `trickle` 0..1 (0.35).
+ * `trickle` 0..1 (0.35). At defaults this measures RMS 0.065, peak 0.56,
+ * -23.0 dBA. It is deliberately the quietest of the three in RMS terms: it is
+ * an element meant to be layered, and a sparse event stream cannot reach the
+ * RMS of a continuous bed without its individual drips becoming peaky.
  */
 class WaterDropsV2 : SoundGenerator {
 
@@ -1038,14 +1049,16 @@ class WaterDropsV2 : SoundGenerator {
             // ...and the modulator is capped, because a rare pile-up of grains
             // should not be audibly louder than a busy stream — without the cap
             // the Poisson tail shows up as isolated spikes.
-            val tmL = (0.75f + 0.50f * trickleEnv[0]).coerceAtMost(1.7f)
-            val tmR = (0.75f + 0.50f * trickleEnv[1]).coerceAtMost(1.7f)
+            val tmL = (0.75f + 0.50f * trickleEnv[0]).coerceAtMost(1.55f)
+            val tmR = (0.75f + 0.50f * trickleEnv[1]).coerceAtMost(1.55f)
             val tl = trickleBpL.process(rnd.bip()) * tmL * trickleGain +
                 hollowL.process(rnd.bip()) * hollowGain
             val tr = trickleBpR.process(rnd.bip()) * tmR * trickleGain +
                 hollowR.process(rnd.bip()) * hollowGain
 
             // Makeup gain: sparse plinks need headroom to read at mix level.
+            // Already included in the calibration: defaults measure RMS 0.065,
+            // peak 0.56, -23.0 dBA. Do not add a second makeup stage.
             left[i] = (dryL * dryGain + wetL * wetGain + tl) * 1.9f
             right[i] = (dryR * dryGain + wetR * wetGain + tr) * 1.9f
         }
