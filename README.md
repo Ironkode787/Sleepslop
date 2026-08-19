@@ -21,6 +21,7 @@ A sleep-sound app for Android where **every sound is synthesized mathematically 
 ## Features
 
 - **Layer & mix** — run any combination of sounds simultaneously, each with its own volume slider (perceptual/squared volume curve, click-free gain ramping, soft-clip mixing).
+- **Speaker tuning (room EQ)** — plays ~10 s of pink noise through the current output (phone or Bluetooth speaker), records it with the unprocessed microphone source, averages the spectrum over ~80 FFT windows, and compares 8 octave bands (63 Hz–8 kHz) against the ideal pink slope. The inverted deviation (capped at +6/−8 dB) becomes a chain of peaking biquads in the mixer. Steady-state measurement means Bluetooth latency is irrelevant. Toggle or recalibrate any time from the tune button.
 - **Sleep timer** — 15 min to 8 h, with a gentle 45-second fade-out before stopping.
 - **Background playback** — foreground service with a media notification, partial wake lock, and audio-focus handling (pauses when another app takes over the audio).
 - **Persistent mix** — your selection and volumes are remembered across launches.
@@ -40,8 +41,10 @@ The release build is signed with the checked-in development keystore at `signing
 
 ## Architecture
 
-- `audio/Dsp.kt` — RBJ biquad filters, pink/brown noise filters
+- `audio/Dsp.kt` — RBJ biquad filters (LP/HP/BP/peaking), pink/brown noise filters
 - `audio/Generators.kt` — every sound generator + the sound catalog
-- `audio/AudioEngine.kt` — singleton mixer/render thread, timer, persistence
+- `audio/Fft.kt` — radix-2 FFT for calibration analysis
+- `audio/SpeakerTuner.kt` — mic-based speaker/room calibration + EQ chain
+- `audio/AudioEngine.kt` — singleton mixer/render thread, EQ stage, timer, persistence
 - `PlaybackService.kt` — foreground service, notification, wake lock
 - `ui/` — Compose theme + single-screen UI

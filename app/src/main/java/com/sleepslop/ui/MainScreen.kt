@@ -47,6 +47,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -89,6 +90,7 @@ fun MainScreen() {
     val timerEndAt by AudioEngine.timerEndAt.collectAsState()
 
     var showTimerSheet by remember { mutableStateOf(false) }
+    var showTuneSheet by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -108,7 +110,7 @@ fun MainScreen() {
         NightSky(isPlaying)
 
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
-            Header()
+            Header(onTune = { showTuneSheet = true })
 
             LazyVerticalGrid(
                 columns = GridCells.Fixed(2),
@@ -142,6 +144,10 @@ fun MainScreen() {
                 onMaster = { AudioEngine.setMasterVolume(it) },
                 onTimerClick = { showTimerSheet = true },
             )
+        }
+
+        if (showTuneSheet) {
+            TuneSheet(onDismiss = { showTuneSheet = false })
         }
 
         if (showTimerSheet) {
@@ -242,20 +248,40 @@ private fun NightSky(isPlaying: Boolean) {
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun Header() {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp)) {
-        Text(
-            "Sleepslop",
-            style = MaterialTheme.typography.headlineLarge,
-            fontWeight = FontWeight.SemiBold,
-            color = Moonlight,
-            letterSpacing = 1.sp,
-        )
-        Text(
-            "Pure math, no recordings. Mix your night.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = Mist,
-        )
+private fun Header(onTune: () -> Unit) {
+    val eqEnabled by AudioEngine.eqEnabled.collectAsState()
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                "Sleepslop",
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = Moonlight,
+                letterSpacing = 1.sp,
+            )
+            Text(
+                "Pure math, no recordings. Mix your night.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Mist,
+            )
+        }
+        Box(
+            Modifier
+                .clip(CircleShape)
+                .background(if (eqEnabled) Periwinkle.copy(alpha = 0.18f) else NightSurface.copy(alpha = 0.7f))
+                .clickable(onClick = onTune)
+                .padding(12.dp)
+        ) {
+            Icon(
+                Icons.Rounded.Tune,
+                contentDescription = "Speaker tuning",
+                tint = if (eqEnabled) Periwinkle else Mist,
+                modifier = Modifier.size(22.dp),
+            )
+        }
     }
 }
 

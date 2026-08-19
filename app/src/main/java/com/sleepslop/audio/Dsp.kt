@@ -2,6 +2,7 @@ package com.sleepslop.audio
 
 import kotlin.math.PI
 import kotlin.math.cos
+import kotlin.math.pow
 import kotlin.math.sin
 
 const val SAMPLE_RATE = 44100
@@ -59,6 +60,21 @@ class Biquad {
         b2 = -alpha / a0
         a1 = -2f * cw / a0
         a2 = (1f - alpha) / a0
+        return this
+    }
+
+    /** RBJ peaking EQ — boosts or cuts gainDb around fc. */
+    fun peaking(fc: Float, q: Float, gainDb: Float): Biquad {
+        val amp = 10f.pow(gainDb / 40f)
+        val w0 = (2.0 * PI * fc / SAMPLE_RATE)
+        val cw = cos(w0).toFloat()
+        val alpha = (sin(w0) / (2.0 * q)).toFloat()
+        val a0 = 1f + alpha / amp
+        b0 = (1f + alpha * amp) / a0
+        b1 = -2f * cw / a0
+        b2 = (1f - alpha * amp) / a0
+        a1 = -2f * cw / a0
+        a2 = (1f - alpha / amp) / a0
         return this
     }
 

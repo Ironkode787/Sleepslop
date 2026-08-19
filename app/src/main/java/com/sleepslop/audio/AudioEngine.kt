@@ -38,6 +38,16 @@ object AudioEngine {
     private val _timerEndAt = MutableStateFlow<Long?>(null)
     val timerEndAt = _timerEndAt.asStateFlow()
 
+    /** Room-EQ correction (dB per SpeakerTuner band), or null if never calibrated. */
+    private val _eqGains = MutableStateFlow<FloatArray?>(null)
+    val eqGains = _eqGains.asStateFlow()
+
+    private val _eqEnabled = MutableStateFlow(false)
+    val eqEnabled = _eqEnabled.asStateFlow()
+
+    @Volatile private var eqChainL: EqChain? = null
+    @Volatile private var eqChainR: EqChain? = null
+
     private lateinit var appContext: Context
     private lateinit var prefs: SharedPreferences
 
@@ -50,6 +60,14 @@ object AudioEngine {
         appContext = context.applicationContext
         prefs = appContext.getSharedPreferences("sleepslop", Context.MODE_PRIVATE)
         _masterVolume.value = prefs.getFloat("master", 0.8f)
+        prefs.getString("eq", null)?.let { encoded ->
+            val gains = encoded.split(',').mapNotNull { it.toFloatOrNull() }.toFloatArray()
+            if (gains.size == SpeakerTuner.BAND_CENTERS.size) {
+                _eqGains.value = gains
+                _eqEnabled.value = prefs.getBoolean("eq_on", true)
+                rebuildEq()
+            }
+        }
         val saved = prefs.getString("mix", null) ?: return
         val restored = mutableMapOf<Sound, Float>()
         for (entry in saved.split(',')) {
@@ -113,6 +131,39 @@ object AudioEngine {
     }
 
     fun togglePlayback() = if (_isPlaying.value) pause() else play()
+
+    /** Stores a new calibration curve (null clears it) and enables it. */
+    fun setEq(gainsDb: FloatArray?) {
+        _eqGains.value = gainsDb
+        _eqEnabled.value = gainsDb != null
+        if (gainsDb == null) {
+            prefs.edit().remove("eq").remove("eq_on").apply()
+        } else {
+            prefs.edit()
+                .putString("eq", gainsDb.joinToString(","))
+                .putBoolean("eq_on", true)
+                .apply()
+        }
+        rebuildEq()
+    }
+
+    fun setEqEnabled(enabled: Boolean) {
+        if (_eqGains.value == null) return
+        _eqEnabled.value = enabled
+        prefs.edit().putBoolean("eq_on", enabled).apply()
+        rebuildEq()
+    }
+
+    private fun rebuildEq() {
+        val gains = _eqGains.value
+        if (gains != null && _eqEnabled.value) {
+            eqChainL = EqChain(gains)
+            eqChainR = EqChain(gains)
+        } else {
+            eqChainL = null
+            eqChainR = null
+        }
+    }
 
     /** Schedules a stop [minutes] from now, or cancels when null/0. */
     fun setTimer(minutes: Int?) {
@@ -242,12 +293,20 @@ object AudioEngine {
 
             val masterTarget = _masterVolume.value.let { it * it } * timerFade
             val masterStep = (masterTarget - masterGain) / BUFFER_FRAMES
+            val eqL = eqChainL
+            val eqR = eqChainR
             var idx = 0
             for (i in 0 until BUFFER_FRAMES) {
                 masterGain += masterStep
+                var l = mixL[i]
+                var r = mixR[i]
+                if (eqL != null && eqR != null) {
+                    l = eqL.process(l)
+                    r = eqR.process(r)
+                }
                 // Soft clip so stacked sounds saturate gracefully.
-                out[idx++] = tanh(mixL[i] * masterGain)
-                out[idx++] = tanh(mixR[i] * masterGain)
+                out[idx++] = tanh(l * masterGain)
+                out[idx++] = tanh(r * masterGain)
             }
 
             track.write(out, 0, out.size, AudioTrack.WRITE_BLOCKING)
