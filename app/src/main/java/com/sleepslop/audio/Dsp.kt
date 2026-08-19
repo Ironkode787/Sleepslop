@@ -2,6 +2,7 @@ package com.sleepslop.audio
 
 import kotlin.math.PI
 import kotlin.math.cos
+import kotlin.math.exp
 import kotlin.math.pow
 import kotlin.math.sin
 
@@ -108,6 +109,22 @@ class PinkFilter {
         val pink = p0 + p1 + p2 + p3 + p4 + p5 + p6 + white * 0.5362f
         p6 = white * 0.115926f
         return pink * 0.11f
+    }
+}
+
+/** Cheap one-pole lowpass with a retunable cutoff (zipper-free enough per block). */
+class OnePoleLp {
+    private var y = 0f
+    private var k = 1f
+
+    fun setCutoff(fc: Float): OnePoleLp {
+        k = 1f - exp(-2f * PI.toFloat() * fc / SAMPLE_RATE)
+        return this
+    }
+
+    fun process(x: Float): Float {
+        y += k * (x - y)
+        return y
     }
 }
 

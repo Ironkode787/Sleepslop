@@ -48,6 +48,13 @@ object AudioEngine {
     @Volatile private var eqChainL: EqChain? = null
     @Volatile private var eqChainR: EqChain? = null
 
+    /** Per-sound parameter overrides (values not at their defaults). */
+    private val _paramValues = MutableStateFlow<Map<Sound, Map<String, Float>>>(emptyMap())
+    val paramValues = _paramValues.asStateFlow()
+
+    /** Generator instances currently owned by the render thread. */
+    private val liveGenerators = java.util.concurrent.ConcurrentHashMap<Sound, SoundGenerator>()
+
     private lateinit var appContext: Context
     private lateinit var prefs: SharedPreferences
 
@@ -60,6 +67,19 @@ object AudioEngine {
         appContext = context.applicationContext
         prefs = appContext.getSharedPreferences("sleepslop", Context.MODE_PRIVATE)
         _masterVolume.value = prefs.getFloat("master", 0.8f)
+        prefs.getString("params", null)?.let { encoded ->
+            val restored = mutableMapOf<Sound, MutableMap<String, Float>>()
+            for (entry in encoded.split(',')) {
+                val eq = entry.indexOf('=')
+                val slash = entry.indexOf('/')
+                if (eq < 0 || slash < 0 || slash > eq) continue
+                val sound = Sound.entries.firstOrNull { it.name == entry.substring(0, slash) }
+                    ?: continue
+                val value = entry.substring(eq + 1).toFloatOrNull() ?: continue
+                restored.getOrPut(sound) { mutableMapOf() }[entry.substring(slash + 1, eq)] = value
+            }
+            _paramValues.value = restored
+        }
         prefs.getString("eq", null)?.let { encoded ->
             val gains = encoded.split(',').mapNotNull { it.toFloatOrNull() }.toFloatArray()
             if (gains.size == SpeakerTuner.BAND_CENTERS.size) {
@@ -104,6 +124,23 @@ object AudioEngine {
         _mix.value = current
         persist()
     }
+
+    /** Updates one generator parameter live and persists it. */
+    fun setParam(sound: Sound, paramId: String, value: Float) {
+        val all = _paramValues.value.toMutableMap()
+        val per = (all[sound] ?: emptyMap()).toMutableMap()
+        per[paramId] = value
+        all[sound] = per
+        _paramValues.value = all
+        val encoded = all.entries.joinToString(",") { (s, params) ->
+            params.entries.joinToString(",") { "${s.name}/${it.key}=${it.value}" }
+        }
+        prefs.edit().putString("params", encoded).apply()
+        liveGenerators[sound]?.setParam(paramId, value)
+    }
+
+    fun paramValue(sound: Sound, param: Param): Float =
+        _paramValues.value[sound]?.get(param.id) ?: param.default
 
     fun setMasterVolume(volume: Float) {
         _masterVolume.value = volume.coerceIn(0f, 1f)
@@ -249,7 +286,6 @@ object AudioEngine {
         val mixR = FloatArray(BUFFER_FRAMES)
         val out = FloatArray(BUFFER_FRAMES * 2)
 
-        val generators = HashMap<Sound, SoundGenerator>()
         val gains = HashMap<Sound, Float>()
         var masterGain = 0f
 
@@ -269,14 +305,18 @@ object AudioEngine {
                 timerFade = min(1f, remaining / FADE_OUT_MS.toFloat())
             }
 
-            generators.keys.retainAll(snapshot.keys)
+            liveGenerators.keys.retainAll(snapshot.keys)
             gains.keys.retainAll(snapshot.keys)
 
             java.util.Arrays.fill(mixL, 0f)
             java.util.Arrays.fill(mixR, 0f)
 
             for ((sound, volume) in snapshot) {
-                val gen = generators.getOrPut(sound) { sound.create() }
+                val gen = liveGenerators.getOrPut(sound) {
+                    sound.create().also { fresh ->
+                        _paramValues.value[sound]?.forEach { (id, v) -> fresh.setParam(id, v) }
+                    }
+                }
                 gen.render(genL, genR, BUFFER_FRAMES)
                 // Perceptual (squared) volume curve, ramped across the buffer.
                 val target = volume * volume

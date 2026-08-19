@@ -2,8 +2,8 @@ package com.sleepslop.audio
 
 import kotlin.math.PI
 import kotlin.math.cos
-import kotlin.math.min
 import kotlin.math.pow
+import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.random.Random
 
@@ -13,6 +13,13 @@ import kotlin.random.Random
  */
 interface SoundGenerator {
     fun render(left: FloatArray, right: FloatArray, frames: Int)
+
+    /**
+     * Live parameter update from the UI thread. Implementations store values
+     * in fields read by the render thread; float writes are atomic on the
+     * JVM, so no locking is needed.
+     */
+    fun setParam(id: String, value: Float) {}
 }
 
 private fun Random.bipolar(): Float = nextFloat() * 2f - 1f
@@ -420,21 +427,113 @@ class NightTrain : SoundGenerator {
 // Catalog
 // ---------------------------------------------------------------------------
 
+/** A user-tweakable parameter of a generator. */
+class Param(
+    val id: String,
+    val label: String,
+    val min: Float,
+    val max: Float,
+    val default: Float,
+    val unit: String = "",
+    val integer: Boolean = false,
+) {
+    fun format(value: Float): String = when {
+        integer -> value.roundToInt().toString()
+        unit.isNotEmpty() -> "${value.roundToInt()} $unit"
+        min >= 0f && max <= 1f -> "${(value * 100).roundToInt()}%"
+        else -> value.roundToInt().toString()
+    }
+}
+
+/** MIX sounds live on the main grid; ELEMENTs on the components tab. */
+enum class Category { MIX, ELEMENT }
+
 enum class Sound(
     val label: String,
     val emoji: String,
     val blurb: String,
+    val category: Category,
+    val params: List<Param>,
     val create: () -> SoundGenerator,
 ) {
-    WHITE("White noise", "🌫️", "Even energy across every frequency", ::WhiteNoise),
-    PINK("Pink noise", "🌸", "Softer, naturally balanced hiss", ::PinkNoise),
-    BROWN("Brown noise", "🟤", "Deep, gentle low-frequency rumble", ::BrownNoise),
-    DEEP("Deep tones", "🌀", "110 Hz binaural delta-wave beat", ::DeepTones),
-    RAIN("Rain", "🌧️", "Steady rainfall with soft droplets", ::Rain),
-    OCEAN("Ocean", "🌊", "Slow waves rolling onto the shore", ::Ocean),
-    WIND("Wind", "🍃", "Gusts drifting through the dark", ::Wind),
-    FOREST("Forest night", "🦗", "Crickets in a quiet wood", ::ForestNight),
-    FIRE("Campfire", "🔥", "Crackling embers, warm rumble", ::Campfire),
-    FAN("Box fan", "💨", "Low motor hum and moving air", ::BoxFan),
-    TRAIN("Night train", "🚂", "Hypnotic clickety-clack, far away", ::NightTrain),
+    WHITE("White noise", "🌫️", "Even energy across every frequency", Category.MIX, emptyList(), ::WhiteNoise),
+    PINK("Pink noise", "🌸", "Softer, naturally balanced hiss", Category.MIX, emptyList(), ::PinkNoise),
+    BROWN("Brown noise", "🟤", "Deep, gentle low-frequency rumble", Category.MIX, emptyList(), ::BrownNoise),
+    DEEP("Deep tones", "🌀", "110 Hz binaural delta-wave beat", Category.MIX, emptyList(), ::DeepTones),
+    RAIN("Rain", "🌧️", "Steady rainfall with soft droplets", Category.MIX, emptyList(), ::Rain),
+    OCEAN("Ocean", "🌊", "Slow waves rolling onto the shore", Category.MIX, emptyList(), ::Ocean),
+    WIND("Wind", "🍃", "Gusts drifting through the dark", Category.MIX, emptyList(), ::Wind),
+    FOREST("Forest night", "🌲", "Crickets in a quiet wood", Category.MIX, emptyList(), ::ForestNight),
+    FIRE("Campfire", "🔥", "Crackling embers, warm rumble", Category.MIX, emptyList(), ::Campfire),
+    FAN("Box fan", "💨", "Low motor hum and moving air", Category.MIX, emptyList(), ::BoxFan),
+    FANSIM(
+        "Simulated fan", "🌪️", "Physically modeled fan — tap Tune to shape it",
+        Category.MIX,
+        listOf(
+            Param("rpm", "Speed", 500f, 1600f, 1050f, "rpm"),
+            Param("blades", "Blades", 3f, 7f, 5f, integer = true),
+            Param("size", "Fan size", 0f, 1f, 0.5f),
+            Param("distance", "Distance", 0f, 1f, 0.35f),
+            Param("sway", "Oscillation", 0f, 1f, 0f),
+        ),
+        ::SimulatedFan,
+    ),
+    TRAIN("Night train", "🚂", "Hypnotic clickety-clack, far away", Category.MIX, emptyList(), ::NightTrain),
+
+    // ------------------------------------------------------------ elements
+    CRICKETS(
+        "Crickets", "🦗", "A meadow of chirps you can herd",
+        Category.ELEMENT,
+        listOf(
+            Param("rate", "Chirp rate", 0f, 1f, 0.5f),
+            Param("voices", "Swarm size", 1f, 6f, 3f, integer = true),
+            Param("pitch", "Pitch", 3200f, 5200f, 4200f, "Hz"),
+        ),
+        ::CricketsElement,
+    ),
+    FROGS(
+        "Frogs", "🐸", "Croaks from the pond's edge",
+        Category.ELEMENT,
+        listOf(
+            Param("rate", "Croak rate", 0f, 1f, 0.45f),
+            Param("pitch", "Pitch", 250f, 620f, 380f, "Hz"),
+        ),
+        ::FrogsElement,
+    ),
+    OWL(
+        "Owl", "🦉", "The occasional hoot from a far tree",
+        Category.ELEMENT,
+        listOf(
+            Param("rate", "Hoot rate", 0f, 1f, 0.4f),
+            Param("pitch", "Pitch", 280f, 440f, 350f, "Hz"),
+        ),
+        ::OwlElement,
+    ),
+    THUNDER(
+        "Distant thunder", "⛈️", "Slow rumbles rolling over the horizon",
+        Category.ELEMENT,
+        listOf(
+            Param("rate", "Storm activity", 0f, 1f, 0.4f),
+            Param("distance", "Distance", 0f, 1f, 0.6f),
+        ),
+        ::ThunderElement,
+    ),
+    CHIMES(
+        "Wind chimes", "🎐", "Pentatonic strikes on a breeze",
+        Category.ELEMENT,
+        listOf(
+            Param("rate", "Breeze", 0f, 1f, 0.4f),
+            Param("shimmer", "Shimmer", 0f, 1f, 0.5f),
+        ),
+        ::ChimesElement,
+    ),
+    DRIPS(
+        "Water drops", "💧", "Plinks echoing in a quiet cave",
+        Category.ELEMENT,
+        listOf(
+            Param("rate", "Drip rate", 0f, 1f, 0.4f),
+            Param("tone", "Tone", 0f, 1f, 0.5f),
+        ),
+        ::WaterDropsElement,
+    ),
 }

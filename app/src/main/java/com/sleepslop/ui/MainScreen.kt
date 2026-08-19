@@ -38,6 +38,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items as listItems
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -77,6 +79,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.sleepslop.audio.AudioEngine
+import com.sleepslop.audio.Category
 import com.sleepslop.audio.Sound
 import kotlinx.coroutines.delay
 import kotlin.math.sin
@@ -91,6 +94,11 @@ fun MainScreen() {
 
     var showTimerSheet by remember { mutableStateOf(false) }
     var showTuneSheet by remember { mutableStateOf(false) }
+    var selectedTab by remember { mutableStateOf(0) }
+    var paramSheetSound by remember { mutableStateOf<Sound?>(null) }
+
+    val mixSounds = remember { Sound.entries.filter { it.category == Category.MIX } }
+    val elementSounds = remember { Sound.entries.filter { it.category == Category.ELEMENT } }
 
     val context = LocalContext.current
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -112,24 +120,56 @@ fun MainScreen() {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
             Header(onTune = { showTuneSheet = true })
 
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
-                modifier = Modifier.weight(1f).padding(horizontal = 16.dp),
-                contentPadding = PaddingValues(top = 4.dp, bottom = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+            Row(
+                Modifier.padding(horizontal = 20.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                items(Sound.entries) { sound ->
-                    SoundCard(
-                        sound = sound,
-                        volume = mix[sound],
-                        playing = isPlaying,
-                        onToggle = {
-                            ensureNotificationPermission()
-                            AudioEngine.toggle(sound)
-                        },
-                        onVolume = { AudioEngine.setVolume(sound, it) },
-                    )
+                TabPill("Mix", selectedTab == 0) { selectedTab = 0 }
+                TabPill("Elements", selectedTab == 1) { selectedTab = 1 }
+            }
+            Spacer(Modifier.height(10.dp))
+
+            if (selectedTab == 0) {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    modifier = Modifier.weight(1f).padding(horizontal = 16.dp),
+                    contentPadding = PaddingValues(top = 4.dp, bottom = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    items(mixSounds) { sound ->
+                        SoundCard(
+                            sound = sound,
+                            volume = mix[sound],
+                            playing = isPlaying,
+                            onToggle = {
+                                ensureNotificationPermission()
+                                AudioEngine.toggle(sound)
+                            },
+                            onVolume = { AudioEngine.setVolume(sound, it) },
+                            onOpenParams = if (sound.params.isNotEmpty()) {
+                                { paramSheetSound = sound }
+                            } else null,
+                        )
+                    }
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.weight(1f).padding(horizontal = 16.dp),
+                    contentPadding = PaddingValues(top = 4.dp, bottom = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    listItems(elementSounds) { sound ->
+                        ElementCard(
+                            sound = sound,
+                            volume = mix[sound],
+                            onToggle = {
+                                ensureNotificationPermission()
+                                AudioEngine.toggle(sound)
+                            },
+                            onVolume = { AudioEngine.setVolume(sound, it) },
+                        )
+                    }
                 }
             }
 
@@ -148,6 +188,10 @@ fun MainScreen() {
 
         if (showTuneSheet) {
             TuneSheet(onDismiss = { showTuneSheet = false })
+        }
+
+        paramSheetSound?.let { sound ->
+            ParamSheet(sound, onDismiss = { paramSheetSound = null })
         }
 
         if (showTimerSheet) {
@@ -296,6 +340,7 @@ private fun SoundCard(
     playing: Boolean,
     onToggle: () -> Unit,
     onVolume: (Float) -> Unit,
+    onOpenParams: (() -> Unit)? = null,
 ) {
     val active = volume != null
     val glow by animateFloatAsState(if (active) 1f else 0f, tween(400), label = "cardGlow")
@@ -361,16 +406,42 @@ private fun SoundCard(
             enter = expandVertically() + fadeIn(),
             exit = shrinkVertically() + fadeOut(),
         ) {
-            Slider(
-                value = volume ?: 0.75f,
-                onValueChange = onVolume,
-                modifier = Modifier.padding(top = 6.dp).height(26.dp),
-                colors = SliderDefaults.colors(
-                    thumbColor = Periwinkle,
-                    activeTrackColor = Periwinkle.copy(alpha = 0.85f),
-                    inactiveTrackColor = Night.copy(alpha = 0.9f),
-                ),
-            )
+            Column {
+                Slider(
+                    value = volume ?: 0.75f,
+                    onValueChange = onVolume,
+                    modifier = Modifier.padding(top = 6.dp).height(26.dp),
+                    colors = SliderDefaults.colors(
+                        thumbColor = Periwinkle,
+                        activeTrackColor = Periwinkle.copy(alpha = 0.85f),
+                        inactiveTrackColor = Night.copy(alpha = 0.9f),
+                    ),
+                )
+                if (onOpenParams != null) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .padding(top = 6.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Night.copy(alpha = 0.55f))
+                            .clickable(onClick = onOpenParams)
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                    ) {
+                        Icon(
+                            Icons.Rounded.Tune,
+                            contentDescription = null,
+                            tint = Periwinkle,
+                            modifier = Modifier.size(15.dp),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "Tune",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Periwinkle,
+                        )
+                    }
+                }
+            }
         }
     }
 }

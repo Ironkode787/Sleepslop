@@ -16,7 +16,21 @@ A sleep-sound app for Android where **every sound is synthesized mathematically 
 | 🦗 Forest night | Pink-noise foliage + three synthesized crickets (pulsed ~4 kHz sine syllables) |
 | 🔥 Campfire | Brown rumble + random band-passed crackles and occasional low pops |
 | 💨 Box fan | 53 Hz motor hum with harmonics, blade wobble, low-passed air noise |
+| 🌪️ Simulated fan | Physical fan model: hum harmonics at the blade-pass frequency, per-blade-modulated turbulence, tip-vortex whoosh; tunable speed (rpm), blade count, size, distance, oscillation |
 | 🚂 Night train | Rolling brown drone with a rhythmic clickety-clack burst pattern |
+
+## Elements
+
+A second tab of modular ambient components, each with its own occurrence/character parameters plus volume — layer them over any mix:
+
+| Element | Parameters |
+|---|---|
+| 🦗 Crickets | chirp rate, swarm size (1–6 voices), pitch |
+| 🐸 Frogs | croak rate, pitch (pulsed two-harmonic croaks with downward glide) |
+| 🦉 Owl | hoot rate, pitch ("hoo-hoo-hoooo" with vibrato on the long note) |
+| ⛈️ Distant thunder | storm activity, distance (texture-modulated brown rumbles) |
+| 🎐 Wind chimes | breeze (gust-clustered strikes), shimmer (pentatonic two-partial tones) |
+| 💧 Water drops | drip rate, tone (click-excited plinks with an upward glide) |
 
 ## Features
 
@@ -41,8 +55,10 @@ The release build is signed with the checked-in development keystore at `signing
 
 ## Architecture
 
-- `audio/Dsp.kt` — RBJ biquad filters (LP/HP/BP/peaking), pink/brown noise filters
-- `audio/Generators.kt` — every sound generator + the sound catalog
+- `audio/Dsp.kt` — RBJ biquad filters (LP/HP/BP/peaking), one-pole LP, pink/brown noise filters
+- `audio/Generators.kt` — main sound generators + the catalog (sounds, elements, parameters)
+- `audio/Elements.kt` — parameterized ambient elements (crickets, frogs, owl, thunder, chimes, drips)
+- `audio/SimulatedFan.kt` — physically-inspired fan model
 - `audio/Fft.kt` — radix-2 FFT for calibration analysis
 - `audio/SpeakerTuner.kt` — mic-based speaker/room calibration + EQ chain
 - `audio/AudioEngine.kt` — singleton mixer/render thread, EQ stage, timer, persistence
