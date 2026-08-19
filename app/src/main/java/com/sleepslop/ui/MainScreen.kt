@@ -277,7 +277,7 @@ private fun Header(onTune: () -> Unit) {
         ) {
             Icon(
                 Icons.Rounded.Tune,
-                contentDescription = "Speaker tuning",
+                contentDescription = "Room and speaker tuning",
                 tint = if (eqEnabled) Periwinkle else Mist,
                 modifier = Modifier.size(22.dp),
             )

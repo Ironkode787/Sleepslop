@@ -76,7 +76,7 @@ fun TuneSheet(onDismiss: () -> Unit) {
     ) {
         Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 40.dp)) {
             Text(
-                "Speaker tuning",
+                "Room & speaker tuning",
                 style = MaterialTheme.typography.titleLarge,
                 color = Moonlight,
                 fontWeight = FontWeight.Medium,
@@ -85,9 +85,10 @@ fun TuneSheet(onDismiss: () -> Unit) {
             when (val s = state) {
                 is SpeakerTuner.State.Idle -> {
                     Text(
-                        "Sleepslop can measure your speaker and room with the microphone " +
-                            "and flatten the response with an EQ. Works with Bluetooth " +
-                            "speakers — the measurement is immune to Bluetooth latency.",
+                        "Sleepslop measures the combined response of your speaker AND your " +
+                            "room — resonances, boomy corners, dulled highs — with the " +
+                            "microphone, and flattens it with an EQ. Works with Bluetooth " +
+                            "speakers; the measurement is immune to Bluetooth latency.",
                         style = MaterialTheme.typography.bodySmall,
                         color = Mist,
                     )
@@ -118,9 +119,10 @@ fun TuneSheet(onDismiss: () -> Unit) {
                         }
                     } else {
                         Text(
-                            "Place the phone about an arm's length from the speaker, set a " +
-                                "comfortable volume, keep the room quiet, and hold still for " +
-                                "ten seconds of pink noise.",
+                            "Place the phone where your head will be when you sleep — the " +
+                                "correction is computed for that exact spot in the room. Set " +
+                                "a comfortable volume, keep the room quiet, and hold still " +
+                                "for ten seconds of pink noise.",
                             style = MaterialTheme.typography.bodySmall,
                             color = Mist,
                         )
@@ -151,8 +153,8 @@ fun TuneSheet(onDismiss: () -> Unit) {
 
                 is SpeakerTuner.State.Done -> {
                     Text(
-                        "Correction curve — boosts where your speaker is weak, cuts where " +
-                            "it shouts.",
+                        "Correction curve — boosts where your speaker and room are weak, " +
+                            "cuts where they resonate.",
                         style = MaterialTheme.typography.bodySmall,
                         color = Mist,
                     )
