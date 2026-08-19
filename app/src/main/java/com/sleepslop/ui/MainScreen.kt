@@ -47,6 +47,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Bedtime
+import androidx.compose.material.icons.rounded.BookmarkBorder
+import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Tune
@@ -94,6 +96,9 @@ fun MainScreen() {
 
     var showTimerSheet by remember { mutableStateOf(false) }
     var showTuneSheet by remember { mutableStateOf(false) }
+    var showPresets by remember { mutableStateOf(false) }
+    var showNight by remember { mutableStateOf(false) }
+    var showBedside by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableStateOf(0) }
     var paramSheetSound by remember { mutableStateOf<Sound?>(null) }
 
@@ -118,7 +123,11 @@ fun MainScreen() {
         NightSky(isPlaying)
 
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
-            Header(onTune = { showTuneSheet = true })
+            Header(
+                onPresets = { showPresets = true },
+                onNight = { showNight = true },
+                onTune = { showTuneSheet = true },
+            )
 
             Row(
                 Modifier.padding(horizontal = 20.dp, vertical = 2.dp),
@@ -147,9 +156,7 @@ fun MainScreen() {
                                 AudioEngine.toggle(sound)
                             },
                             onVolume = { AudioEngine.setVolume(sound, it) },
-                            onOpenParams = if (sound.params.isNotEmpty()) {
-                                { paramSheetSound = sound }
-                            } else null,
+                            onOpenParams = { paramSheetSound = sound },
                         )
                     }
                 }
@@ -190,8 +197,23 @@ fun MainScreen() {
             TuneSheet(onDismiss = { showTuneSheet = false })
         }
 
+        if (showPresets) {
+            PresetsSheet(onDismiss = { showPresets = false })
+        }
+
+        if (showNight) {
+            NightSheet(
+                onBedside = { showBedside = true },
+                onDismiss = { showNight = false },
+            )
+        }
+
         paramSheetSound?.let { sound ->
             ParamSheet(sound, onDismiss = { paramSheetSound = null })
+        }
+
+        if (showBedside) {
+            BedsideScreen(onExit = { showBedside = false })
         }
 
         if (showTimerSheet) {
@@ -292,11 +314,12 @@ private fun NightSky(isPlaying: Boolean) {
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun Header(onTune: () -> Unit) {
+private fun Header(onPresets: () -> Unit, onNight: () -> Unit, onTune: () -> Unit) {
     val eqEnabled by AudioEngine.eqEnabled.collectAsState()
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Column(Modifier.weight(1f)) {
             Text(
@@ -312,20 +335,32 @@ private fun Header(onTune: () -> Unit) {
                 color = Mist,
             )
         }
-        Box(
-            Modifier
-                .clip(CircleShape)
-                .background(if (eqEnabled) Periwinkle.copy(alpha = 0.18f) else NightSurface.copy(alpha = 0.7f))
-                .clickable(onClick = onTune)
-                .padding(12.dp)
-        ) {
-            Icon(
-                Icons.Rounded.Tune,
-                contentDescription = "Room and speaker tuning",
-                tint = if (eqEnabled) Periwinkle else Mist,
-                modifier = Modifier.size(22.dp),
-            )
-        }
+        HeaderIcon(Icons.Rounded.BookmarkBorder, "Presets", highlighted = false, onClick = onPresets)
+        HeaderIcon(Icons.Rounded.DarkMode, "Night options", highlighted = false, onClick = onNight)
+        HeaderIcon(Icons.Rounded.Tune, "Room and speaker tuning", highlighted = eqEnabled, onClick = onTune)
+    }
+}
+
+@Composable
+private fun HeaderIcon(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    description: String,
+    highlighted: Boolean,
+    onClick: () -> Unit,
+) {
+    Box(
+        Modifier
+            .clip(CircleShape)
+            .background(if (highlighted) Periwinkle.copy(alpha = 0.18f) else NightSurface.copy(alpha = 0.7f))
+            .clickable(onClick = onClick)
+            .padding(11.dp)
+    ) {
+        Icon(
+            icon,
+            contentDescription = description,
+            tint = if (highlighted) Periwinkle else Mist,
+            modifier = Modifier.size(21.dp),
+        )
     }
 }
 

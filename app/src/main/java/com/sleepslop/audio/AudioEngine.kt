@@ -22,7 +22,8 @@ import kotlin.math.tanh
 object AudioEngine {
 
     private const val BUFFER_FRAMES = 1024
-    private const val FADE_OUT_MS = 45_000L // sleep-timer fade duration
+    private const val FADE_OUT_MS = 60_000L // sleep-timer fade duration
+    private const val FADE_IN_SECONDS = 3f  // gentle ramp when playback starts
 
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying = _isPlaying.asStateFlow()
@@ -55,6 +56,23 @@ object AudioEngine {
     /** Generator instances currently owned by the render thread. */
     private val liveGenerators = java.util.concurrent.ConcurrentHashMap<Sound, SoundGenerator>()
 
+    /** Per-sound brightness tilt, -1 (darker) .. +1 (brighter). */
+    private val _tilts = MutableStateFlow<Map<Sound, Float>>(emptyMap())
+    val tilts = _tilts.asStateFlow()
+
+    private val _driftEnabled = MutableStateFlow(false)
+    val driftEnabled = _driftEnabled.asStateFlow()
+    private val _driftIntensity = MutableStateFlow(0.6f)
+    val driftIntensity = _driftIntensity.asStateFlow()
+
+    private val _spaceWidth = MutableStateFlow(0.5f)
+    val spaceWidth = _spaceWidth.asStateFlow()
+    private val _spaceRoom = MutableStateFlow(0f)
+    val spaceRoom = _spaceRoom.asStateFlow()
+
+    private val drift = DriftEngine()
+    private val space = SpaceDiffuser()
+
     private lateinit var appContext: Context
     private lateinit var prefs: SharedPreferences
 
@@ -67,6 +85,21 @@ object AudioEngine {
         appContext = context.applicationContext
         prefs = appContext.getSharedPreferences("sleepslop", Context.MODE_PRIVATE)
         _masterVolume.value = prefs.getFloat("master", 0.8f)
+        _driftEnabled.value = prefs.getBoolean("drift_on", false)
+        _driftIntensity.value = prefs.getFloat("drift_i", 0.6f)
+        _spaceWidth.value = prefs.getFloat("space_w", 0.5f)
+        _spaceRoom.value = prefs.getFloat("space_r", 0f)
+        prefs.getString("tilts", null)?.let { encoded ->
+            val restored = mutableMapOf<Sound, Float>()
+            for (entry in encoded.split(',')) {
+                val eq = entry.indexOf('=')
+                if (eq < 0) continue
+                val sound = Sound.entries.firstOrNull { it.name == entry.substring(0, eq) }
+                    ?: continue
+                restored[sound] = entry.substring(eq + 1).toFloatOrNull() ?: continue
+            }
+            _tilts.value = restored
+        }
         prefs.getString("params", null)?.let { encoded ->
             val restored = mutableMapOf<Sound, MutableMap<String, Float>>()
             for (entry in encoded.split(',')) {
@@ -141,6 +174,56 @@ object AudioEngine {
 
     fun paramValue(sound: Sound, param: Param): Float =
         _paramValues.value[sound]?.get(param.id) ?: param.default
+
+    fun setTilt(sound: Sound, tilt: Float) {
+        val all = _tilts.value.toMutableMap()
+        if (tilt > -0.02f && tilt < 0.02f) all.remove(sound) else all[sound] = tilt.coerceIn(-1f, 1f)
+        _tilts.value = all
+        prefs.edit()
+            .putString("tilts", all.entries.joinToString(",") { "${it.key.name}=${it.value}" })
+            .apply()
+    }
+
+    fun setDriftEnabled(enabled: Boolean) {
+        _driftEnabled.value = enabled
+        prefs.edit().putBoolean("drift_on", enabled).apply()
+    }
+
+    fun setDriftIntensity(intensity: Float) {
+        _driftIntensity.value = intensity.coerceIn(0f, 1f)
+        prefs.edit().putFloat("drift_i", _driftIntensity.value).apply()
+    }
+
+    fun setSpaceWidth(width: Float) {
+        _spaceWidth.value = width.coerceIn(0f, 1f)
+        prefs.edit().putFloat("space_w", _spaceWidth.value).apply()
+    }
+
+    fun setSpaceRoom(room: Float) {
+        _spaceRoom.value = room.coerceIn(0f, 1f)
+        prefs.edit().putFloat("space_r", _spaceRoom.value).apply()
+    }
+
+    /** Replaces the whole mix + parameters in one step (used by presets). */
+    fun applyPreset(mix: Map<Sound, Float>, params: Map<Sound, Map<String, Float>>, master: Float) {
+        _mix.value = mix.filterValues { it > 0f }.mapValues { it.value.coerceIn(0f, 1f) }
+        persist()
+        if (params.isNotEmpty()) {
+            val all = _paramValues.value.toMutableMap()
+            for ((sound, perSound) in params) all[sound] = perSound
+            _paramValues.value = all
+            val encoded = all.entries.joinToString(",") { (s, p) ->
+                p.entries.joinToString(",") { "${s.name}/${it.key}=${it.value}" }
+            }
+            prefs.edit().putString("params", encoded).apply()
+            for ((sound, perSound) in params) {
+                val gen = liveGenerators[sound] ?: continue
+                perSound.forEach { (id, v) -> gen.setParam(id, v) }
+            }
+        }
+        setMasterVolume(master)
+        if (_mix.value.isEmpty()) pause()
+    }
 
     fun setMasterVolume(volume: Float) {
         _masterVolume.value = volume.coerceIn(0f, 1f)
@@ -287,10 +370,18 @@ object AudioEngine {
         val out = FloatArray(BUFFER_FRAMES * 2)
 
         val gains = HashMap<Sound, Float>()
+        val tiltFilters = HashMap<Sound, Pair<TiltFilter, TiltFilter>>()
         var masterGain = 0f
+        var fadeIn = 0f
 
         while (running) {
             val snapshot = _mix.value
+
+            drift.setIntensity(if (_driftEnabled.value) _driftIntensity.value else 0f)
+            drift.advance(BUFFER_FRAMES)
+            space.setWidth(_spaceWidth.value)
+            space.setRoom(_spaceRoom.value)
+            fadeIn = min(1f, fadeIn + BUFFER_FRAMES / (SAMPLE_RATE * FADE_IN_SECONDS))
 
             // Sleep timer: fade the last FADE_OUT_MS, then stop everything.
             var timerFade = 1f
@@ -302,11 +393,14 @@ object AudioEngine {
                     pause()
                     break
                 }
-                timerFade = min(1f, remaining / FADE_OUT_MS.toFloat())
+                // Quadratic fade tracks loudness perception better than linear.
+                val linear = min(1f, remaining / FADE_OUT_MS.toFloat())
+                timerFade = linear * linear
             }
 
             liveGenerators.keys.retainAll(snapshot.keys)
             gains.keys.retainAll(snapshot.keys)
+            tiltFilters.keys.retainAll(snapshot.keys)
 
             java.util.Arrays.fill(mixL, 0f)
             java.util.Arrays.fill(mixR, 0f)
@@ -318,20 +412,34 @@ object AudioEngine {
                     }
                 }
                 gen.render(genL, genR, BUFFER_FRAMES)
-                // Perceptual (squared) volume curve, ramped across the buffer.
-                val target = volume * volume
+                // Perceptual (squared) volume curve × drift, ramped across the buffer.
+                val target = volume * volume * drift.gain(sound)
                 val start = gains[sound] ?: 0f
                 val step = (target - start) / BUFFER_FRAMES
                 var g = start
-                for (i in 0 until BUFFER_FRAMES) {
-                    g += step
-                    mixL[i] += genL[i] * g
-                    mixR[i] += genR[i] * g
+                val tilt = _tilts.value[sound] ?: 0f
+                if (tilt != 0f) {
+                    val filters = tiltFilters.getOrPut(sound) { TiltFilter() to TiltFilter() }
+                    filters.first.setTilt(tilt)
+                    filters.second.setTilt(tilt)
+                    for (i in 0 until BUFFER_FRAMES) {
+                        g += step
+                        mixL[i] += filters.first.process(genL[i]) * g
+                        mixR[i] += filters.second.process(genR[i]) * g
+                    }
+                } else {
+                    for (i in 0 until BUFFER_FRAMES) {
+                        g += step
+                        mixL[i] += genL[i] * g
+                        mixR[i] += genR[i] * g
+                    }
                 }
                 gains[sound] = target
             }
 
-            val masterTarget = _masterVolume.value.let { it * it } * timerFade
+            space.process(mixL, mixR, BUFFER_FRAMES)
+
+            val masterTarget = _masterVolume.value.let { it * it } * timerFade * fadeIn
             val masterStep = (masterTarget - masterGain) / BUFFER_FRAMES
             val eqL = eqChainL
             val eqR = eqChainR

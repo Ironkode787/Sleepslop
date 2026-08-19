@@ -69,20 +69,58 @@ class BrownNoise : SoundGenerator {
 }
 
 /**
- * Binaural delta-wave tones: 110 Hz in the left ear, 114 Hz in the right.
- * The brain perceives the 4 Hz difference — squarely in the delta band
- * associated with deep sleep. A very slow swell keeps it organic.
+ * Binaural tones: the carrier plays in the left ear and carrier + beat in
+ * the right; the brain perceives the difference frequency. Delta (1–4 Hz)
+ * tracks deep sleep, theta (4–8 Hz) drowsiness, alpha (~10 Hz) relaxation.
+ * "Descend" mode glides the beat from its set value down to 2.5 Hz over
+ * twenty minutes, shepherding the listener down with it.
  */
 class DeepTones : SoundGenerator {
+    @Volatile private var beat = 4f
+    @Volatile private var carrier = 110f
+    @Volatile private var descend = 0f
+
+    override fun setParam(id: String, value: Float) {
+        when (id) {
+            "beat" -> beat = value
+            "carrier" -> carrier = value
+            "descend" -> {
+                if (value >= 0.5f && descend < 0.5f) descendElapsed = 0L
+                descend = value
+            }
+        }
+    }
+
+    private var descendElapsed = 0L
+    private var carrierS = 110f
+    private var beatS = 4f
+    private var incL = 0.0
+    private var incR = 0.0
     private var phaseL = 0.0
     private var phaseR = 0.0
     private var swellPhase = 0.0
-    private val incL = 2.0 * PI * 110.0 / SAMPLE_RATE
-    private val incR = 2.0 * PI * 114.0 / SAMPLE_RATE
     private val incSwell = 2.0 * PI * 0.08 / SAMPLE_RATE
+    private var blockCountdown = 0
+
+    private fun updateBlock() {
+        carrierS += (carrier - carrierS) * 0.05f
+        var targetBeat = beat
+        if (descend >= 0.5f) {
+            val t = (descendElapsed / (20f * 60f * SAMPLE_RATE)).coerceAtMost(1f)
+            targetBeat = beat + (2.5f - beat) * t
+            descendElapsed += 256
+        }
+        beatS += (targetBeat - beatS) * 0.05f
+        incL = 2.0 * PI * carrierS / SAMPLE_RATE
+        incR = 2.0 * PI * (carrierS + beatS) / SAMPLE_RATE
+    }
 
     override fun render(left: FloatArray, right: FloatArray, frames: Int) {
         for (i in 0 until frames) {
+            if (--blockCountdown <= 0) {
+                blockCountdown = 256
+                updateBlock()
+            }
             val swell = 0.85f + 0.15f * sin(swellPhase).toFloat()
             left[i] = sin(phaseL).toFloat() * 0.25f * swell
             right[i] = sin(phaseR).toFloat() * 0.25f * swell
@@ -139,75 +177,6 @@ private class BurstPool(size: Int) {
         }
         outLR[0] = l
         outLR[1] = r
-    }
-}
-
-/**
- * Rain: a dense low "patter" bed of filtered noise, a high hiss,
- * and a Poisson process of individual droplet bursts.
- */
-class Rain : SoundGenerator {
-    private val rnd = Random(2024)
-    private val bedLo = Biquad().lowpass(1100f)
-    private val bedHiL = Biquad().highpass(3800f)
-    private val bedHiR = Biquad().highpass(3800f)
-    private val drops = BurstPool(20)
-    private val burst = FloatArray(2)
-    private val dropChance = 34f / SAMPLE_RATE
-
-    override fun render(left: FloatArray, right: FloatArray, frames: Int) {
-        for (i in 0 until frames) {
-            if (rnd.nextFloat() < dropChance) {
-                drops.spawn(
-                    rnd,
-                    amp = 0.10f + rnd.nextFloat() * 0.25f,
-                    decayMs = 6f + rnd.nextFloat() * 26f,
-                    centerHz = 1800f + rnd.nextFloat() * 5500f,
-                    q = 2.2f
-                )
-            }
-            val body = bedLo.process(rnd.bipolar()) * 0.42f
-            val hissL = bedHiL.process(rnd.bipolar()) * 0.10f
-            val hissR = bedHiR.process(rnd.bipolar()) * 0.10f
-            drops.sample(rnd, burst)
-            left[i] = body + hissL + burst[0]
-            right[i] = body + hissR + burst[1]
-        }
-    }
-}
-
-/**
- * Ocean: brown-noise surf whose loudness follows a slow, randomly-timed
- * wave envelope, with a bright hiss of spray released at each crest.
- */
-class Ocean : SoundGenerator {
-    private val rnd = Random(7)
-    private val surfL = BrownFilter()
-    private val surfR = BrownFilter()
-    private val sprayL = Biquad().highpass(1400f)
-    private val sprayR = Biquad().highpass(1400f)
-    private var phase = 0.0
-    private var inc = wavePeriod()
-
-    private fun wavePeriod(): Double =
-        2.0 * PI / ((9.0 + rnd.nextDouble() * 6.0) * SAMPLE_RATE)
-
-    override fun render(left: FloatArray, right: FloatArray, frames: Int) {
-        for (i in 0 until frames) {
-            phase += inc
-            if (phase > 2 * PI) {
-                phase -= 2 * PI
-                inc = wavePeriod()
-            }
-            val raw = (0.5 - 0.5 * cos(phase)).toFloat()
-            val env = raw * raw
-            val surfGain = 0.30f + 0.85f * env
-            val sprayGain = env * env * 0.45f
-            left[i] = surfL.next(rnd.bipolar()) * surfGain +
-                sprayL.process(rnd.bipolar()) * sprayGain
-            right[i] = surfR.next(rnd.bipolar()) * surfGain +
-                sprayR.process(rnd.bipolar()) * sprayGain
-        }
     }
 }
 
@@ -459,9 +428,36 @@ enum class Sound(
     WHITE("White noise", "🌫️", "Even energy across every frequency", Category.MIX, emptyList(), ::WhiteNoise),
     PINK("Pink noise", "🌸", "Softer, naturally balanced hiss", Category.MIX, emptyList(), ::PinkNoise),
     BROWN("Brown noise", "🟤", "Deep, gentle low-frequency rumble", Category.MIX, emptyList(), ::BrownNoise),
-    DEEP("Deep tones", "🌀", "110 Hz binaural delta-wave beat", Category.MIX, emptyList(), ::DeepTones),
-    RAIN("Rain", "🌧️", "Steady rainfall with soft droplets", Category.MIX, emptyList(), ::Rain),
-    OCEAN("Ocean", "🌊", "Slow waves rolling onto the shore", Category.MIX, emptyList(), ::Ocean),
+    DEEP(
+        "Deep tones", "🌀", "Binaural beat — delta to alpha, or descend",
+        Category.MIX,
+        listOf(
+            Param("beat", "Beat", 1f, 12f, 4f, "Hz"),
+            Param("carrier", "Carrier", 80f, 220f, 110f, "Hz"),
+            Param("descend", "Descend (20 min)", 0f, 1f, 0f, integer = true),
+        ),
+        ::DeepTones,
+    ),
+    RAIN(
+        "Rain", "🌧️", "Layered rainfall — patter, wash, and gusts",
+        Category.MIX,
+        listOf(
+            Param("intensity", "Intensity", 0f, 1f, 0.5f),
+            Param("surface", "Surface", 0f, 1f, 0.35f),
+            Param("drips", "Gutter drips", 0f, 1f, 0.25f),
+        ),
+        ::RainV2,
+    ),
+    OCEAN(
+        "Ocean", "🌊", "Overlapping waves washing a gentle shore",
+        Category.MIX,
+        listOf(
+            Param("swell", "Swell", 0f, 1f, 0.5f),
+            Param("period", "Wave period", 8f, 22f, 14f, "s"),
+            Param("foam", "Foam", 0f, 1f, 0.4f),
+        ),
+        ::OceanV2,
+    ),
     WIND("Wind", "🍃", "Gusts drifting through the dark", Category.MIX, emptyList(), ::Wind),
     FOREST("Forest night", "🌲", "Crickets in a quiet wood", Category.MIX, emptyList(), ::ForestNight),
     FIRE("Campfire", "🔥", "Crackling embers, warm rumble", Category.MIX, emptyList(), ::Campfire),
@@ -528,12 +524,68 @@ enum class Sound(
         ::ChimesElement,
     ),
     DRIPS(
-        "Water drops", "💧", "Plinks echoing in a quiet cave",
+        "Water drops", "💧", "Plinks and bloops in an echoing cave",
         Category.ELEMENT,
         listOf(
             Param("rate", "Drip rate", 0f, 1f, 0.4f),
             Param("tone", "Tone", 0f, 1f, 0.5f),
+            Param("space", "Echo", 0f, 1f, 0.6f),
+            Param("trickle", "Trickle", 0f, 1f, 0.35f),
         ),
-        ::WaterDropsElement,
+        ::WaterDropsV2,
+    ),
+    HEARTBEAT(
+        "Heartbeat", "💓", "A slow, soft lub-dub",
+        Category.ELEMENT,
+        listOf(
+            Param("bpm", "Tempo", 45f, 80f, 58f, "bpm"),
+            Param("soft", "Softness", 0f, 1f, 0.6f),
+        ),
+        ::HeartbeatElement,
+    ),
+    PURR(
+        "Cat purr", "🐈", "A contented cat on the pillow",
+        Category.ELEMENT,
+        listOf(
+            Param("rate", "Purr rate", 20f, 32f, 25f, "Hz"),
+            Param("breath", "Breathiness", 0f, 1f, 0.5f),
+        ),
+        ::CatPurrElement,
+    ),
+    CLOCK(
+        "Clock tick", "🕰️", "A patient pendulum in the hall",
+        Category.ELEMENT,
+        listOf(
+            Param("speed", "Tempo", 0f, 1f, 0.5f),
+            Param("wood", "Mellowness", 0f, 1f, 0.5f),
+        ),
+        ::ClockTickElement,
+    ),
+    CAFE(
+        "Café murmur", "☕", "Soft unintelligible chatter and clinks",
+        Category.ELEMENT,
+        listOf(
+            Param("crowd", "Crowd", 0f, 1f, 0.5f),
+            Param("clatter", "Clatter", 0f, 1f, 0.3f),
+        ),
+        ::CafeMurmurElement,
+    ),
+    FOGHORN(
+        "Foghorn", "🚢", "A far horn across still water",
+        Category.ELEMENT,
+        listOf(
+            Param("rate", "Frequency", 0f, 1f, 0.4f),
+            Param("distance", "Distance", 0f, 1f, 0.6f),
+        ),
+        ::FoghornElement,
+    ),
+    BIRDS(
+        "Dawn chorus", "🐦", "Songbirds greeting first light",
+        Category.ELEMENT,
+        listOf(
+            Param("activity", "Activity", 0f, 1f, 0.5f),
+            Param("variety", "Variety", 0f, 1f, 0.5f),
+        ),
+        ::BirdsongElement,
     ),
 }

@@ -7,6 +7,8 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Only used during optional speaker calibration; never recorded to disk. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Sideload app: lets the user exempt overnight playback from Doze via settings. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <application
         android:name=".SleepslopApp"

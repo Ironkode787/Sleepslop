@@ -10,8 +10,8 @@ A sleep-sound app for Android where **every sound is synthesized mathematically 
 | 🌸 Pink noise | Paul Kellet's −3 dB/octave economy filter |
 | 🟤 Brown noise | Leaky integrator over white noise (−6 dB/octave) |
 | 🌀 Deep tones | Binaural beat: 110 Hz left / 114 Hz right → 4 Hz delta-wave perception |
-| 🌧️ Rain | Low-passed patter bed + high hiss + Poisson-spawned band-passed droplet bursts |
-| 🌊 Ocean | Brown-noise surf amplitude-modulated by a randomly-timed wave envelope, spray hiss at crests |
+| 🌧️ Rain | Five-layer rainfall: distant wash, dense grain patter, close splats, canopy hiss, gutter drips — one coherent gust LFO drives them all. Params: intensity, surface, drips |
+| 🌊 Ocean | Three overlapping wave voices (build → soft break → long wash with foam grains) over a constant sea bed; crest dynamics capped for sleep. Params: swell, period, foam |
 | 🍃 Wind | White noise through a resonant bandpass whose center frequency and gain wander like gusts |
 | 🦗 Forest night | Pink-noise foliage + three synthesized crickets (pulsed ~4 kHz sine syllables) |
 | 🔥 Campfire | Brown rumble + random band-passed crackles and occasional low pops |
@@ -30,15 +30,30 @@ A second tab of modular ambient components, each with its own occurrence/charact
 | 🦉 Owl | hoot rate, pitch ("hoo-hoo-hoooo" with vibrato on the long note) |
 | ⛈️ Distant thunder | storm activity, distance (texture-modulated brown rumbles) |
 | 🎐 Wind chimes | breeze (gust-clustered strikes), shimmer (pentatonic two-partial tones) |
-| 💧 Water drops | drip rate, tone (click-excited plinks with an upward glide) |
+| 💓 Heartbeat | tempo, softness (lub-dub with downward pitch glide; womb-like when soft) |
+| 🐈 Cat purr | purr rate, breathiness (pulse train with inhale/exhale alternation) |
+| 🕰️ Clock tick | tempo, mellowness (impulse-excited wooden resonances) |
+| ☕ Café murmur | crowd, clatter (formant-filtered babble voices, soft clinks) |
+| 🚢 Foghorn | frequency, distance (two-tone blasts across still water) |
+| 🐦 Dawn chorus | activity, variety (seeded songbird phrase patterns; used by wake-up) |
+| 💧 Water drops | rate, tone, echo, trickle — stone plinks + Minnaert pool bloops through a feedback-delay cave, over a trickle bed |
 
 ## Features
 
 - **Layer & mix** — run any combination of sounds simultaneously, each with its own volume slider (perceptual/squared volume curve, click-free gain ramping, soft-clip mixing).
 - **Speaker tuning (room EQ)** — plays ~10 s of pink noise through the current output (phone or Bluetooth speaker), records it with the unprocessed microphone source, averages the spectrum over ~80 FFT windows, and compares 8 octave bands (63 Hz–8 kHz) against the ideal pink slope. The inverted deviation (capped at +6/−8 dB) becomes a chain of peaking biquads in the mixer. Steady-state measurement means Bluetooth latency is irrelevant. Toggle or recalibrate any time from the tune button.
-- **Sleep timer** — 15 min to 8 h, with a gentle 45-second fade-out before stopping.
-- **Background playback** — foreground service with a media notification, partial wake lock, and audio-focus handling (pauses when another app takes over the audio).
-- **Persistent mix** — your selection and volumes are remembered across launches.
+- **Presets** — save the current mix + all parameters under a name; six curated built-ins (Rainy night, Seaside, Deep focus, Summer meadow, Night train home, Cozy cabin).
+- **Drift** — slow multi-timescale evolution of every layer's level (2–12 min cycles plus occasional quiet spells), so the mix breathes like a real place.
+- **Space** — master stereo width (bass-safe mid/side) and a small dark room (allpass + cross-coupled feedback delays, RT60 ≈ 0.6 s).
+- **Per-sound brightness** — a ±6 dB spectral tilt on every active sound, from its Tune sheet.
+- **Deep-tone programs** — adjustable binaural beat (1–12 Hz) and carrier, plus a "descend" mode that glides to 2.5 Hz over 20 minutes.
+- **Sleep timer** — 15 min to 8 h, 3 s fade-in on start and a perceptually smooth quadratic 60 s fade-out.
+- **Smart sleep timer** — with the phone on the mattress, the accelerometer watches for stillness; 20 quiet minutes triggers the fade-out.
+- **Wake-up** — arm a time and the night mix cross-fades into a synthesized dawn chorus over the final 12 minutes.
+- **Bedside clock mode** — OLED-black dimmed clock (moon or night-vision ember tint), immersive, keeps the screen on at 5% brightness.
+- **Lock-screen media controls** — MediaSession: play/pause from the lock screen, headset buttons, and watches; pauses when headphones disconnect.
+- **Background playback** — foreground service with a media-style notification, partial wake lock, audio-focus handling, and an optional battery-optimization exemption prompt for aggressive OEMs.
+- **Persistent everything** — mix, volumes, parameters, tilt, drift, space, and presets survive restarts.
 - **Animated night UI** — Jetpack Compose, drifting aurora glow, twinkling starfield, breathing accents while playing.
 
 ## Building
@@ -57,8 +72,13 @@ The release build is signed with the checked-in development keystore at `signing
 
 - `audio/Dsp.kt` — RBJ biquad filters (LP/HP/BP/peaking), one-pole LP, pink/brown noise filters
 - `audio/Generators.kt` — main sound generators + the catalog (sounds, elements, parameters)
-- `audio/Elements.kt` — parameterized ambient elements (crickets, frogs, owl, thunder, chimes, drips)
+- `audio/Elements.kt`, `audio/Elements2.kt` — parameterized ambient elements
+- `audio/Water.kt` — layered rain / ocean / water-drop models
 - `audio/SimulatedFan.kt` — physically-inspired fan model
+- `audio/Space.kt` — stereo width + room diffusion, per-sound tilt filter
+- `audio/Drift.kt` — slow mix-evolution engine
+- `audio/SmartTimer.kt`, `audio/WakeRoutine.kt` — stillness-triggered fade-out, dawn-chorus alarm
+- `data/PresetStore.kt` — preset persistence
 - `audio/Fft.kt` — radix-2 FFT for calibration analysis
 - `audio/SpeakerTuner.kt` — mic-based speaker/room calibration + EQ chain
 - `audio/AudioEngine.kt` — singleton mixer/render thread, EQ stage, timer, persistence

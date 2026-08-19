@@ -138,6 +138,7 @@ fun ElementCard(
                     steps = 0,
                     onChange = onVolume,
                 )
+                TiltSlider(sound)
                 sound.params.forEach { param ->
                     ParamSlider(sound, param)
                 }
@@ -145,6 +146,24 @@ fun ElementCard(
         }
     }
 }
+
+/** Per-sound brightness (spectral tilt) bound to the engine. */
+@Composable
+fun TiltSlider(sound: Sound) {
+    val tilts by AudioEngine.tilts.collectAsState()
+    val tilt = tilts[sound] ?: 0f
+    LabeledSlider(
+        label = "Brightness",
+        valueText = if (tilt.roundLabel() == 0) "neutral" else "%+d%%".format(tilt.roundLabel()),
+        value = tilt,
+        min = -1f,
+        max = 1f,
+        steps = 0,
+        onChange = { AudioEngine.setTilt(sound, it) },
+    )
+}
+
+private fun Float.roundLabel(): Int = (this * 100).roundToInt()
 
 /** One generator parameter bound to the engine. */
 @Composable
@@ -213,6 +232,7 @@ fun ParamSheet(sound: Sound, onDismiss: () -> Unit) {
                 color = Mist,
             )
             Spacer(Modifier.height(14.dp))
+            TiltSlider(sound)
             sound.params.forEach { param ->
                 ParamSlider(sound, param)
             }
