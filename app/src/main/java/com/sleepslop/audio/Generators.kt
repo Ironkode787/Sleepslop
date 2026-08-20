@@ -180,156 +180,11 @@ private class BurstPool(size: Int) {
     }
 }
 
-/**
- * Wind: white noise through a resonant bandpass whose center frequency
- * and intensity wander slowly and independently, like gusts.
- */
-class Wind : SoundGenerator {
-    private val rnd = Random(31)
-    private val bpL = Biquad().bandpass(400f, 1.4f)
-    private val bpR = Biquad().bandpass(430f, 1.4f)
-    private var freq = 400f
-    private var freqTarget = 400f
-    private var gust = 0.6f
-    private var gustTarget = 0.6f
-    private var retuneCounter = 0
-    private var wanderCounter = 0
+// Wind was replaced by WindV2 in Nature.kt (multi-band gust engine).
 
-    override fun render(left: FloatArray, right: FloatArray, frames: Int) {
-        for (i in 0 until frames) {
-            if (--wanderCounter <= 0) {
-                wanderCounter = (SAMPLE_RATE * (1.5f + rnd.nextFloat() * 3f)).toInt()
-                freqTarget = 170f + rnd.nextFloat() * 580f
-                gustTarget = 0.30f + rnd.nextFloat() * 0.70f
-            }
-            if (--retuneCounter <= 0) {
-                retuneCounter = 256
-                freq += (freqTarget - freq) * 0.02f
-                gust += (gustTarget - gust) * 0.02f
-                bpL.bandpass(freq, 1.4f)
-                bpR.bandpass(freq * 1.06f, 1.4f)
-            }
-            left[i] = bpL.process(rnd.bipolar()) * gust * 0.85f
-            right[i] = bpR.process(rnd.bipolar()) * gust * 0.85f
-        }
-    }
-}
+// ForestNight was replaced by ForestNightV2 in Nature.kt (layered distances).
 
-/**
- * Forest night: a whisper of pink-noise foliage plus three synthesized
- * crickets — sine chirps around 4 kHz, pulsed into syllables and phrases.
- */
-class ForestNight : SoundGenerator {
-    private val rnd = Random(3)
-    private val bedL = PinkFilter()
-    private val bedR = PinkFilter()
-    private val bedLp = Biquad().lowpass(900f)
-
-    private inner class Cricket(seed: Int) {
-        private val r = Random(seed)
-        private val freq = 3700f + r.nextFloat() * 900f
-        private val inc = (2.0 * PI * freq / SAMPLE_RATE)
-        private val gainL: Float
-        private val gainR: Float
-        private var phase = 0.0
-        private var state = 0 // 0 = silent gap, 1 = chirping
-        private var counter = (r.nextFloat() * SAMPLE_RATE).toInt()
-        private var syllablesLeft = 0
-        private var sylPos = 0
-        private val sylOn = (0.016f * SAMPLE_RATE).toInt()
-        private val sylTotal = (0.042f * SAMPLE_RATE).toInt()
-
-        init {
-            val pan = r.nextFloat() * (PI / 2).toFloat()
-            gainL = cos(pan)
-            gainR = sin(pan)
-        }
-
-        fun sample(out: FloatArray) {
-            if (state == 0) {
-                if (--counter <= 0) {
-                    state = 1
-                    syllablesLeft = 3 + r.nextInt(6)
-                    sylPos = 0
-                }
-                return
-            }
-            var amp = 0f
-            if (sylPos < sylOn) {
-                // Raised-cosine syllable envelope.
-                amp = (0.5f - 0.5f * cos(2.0 * PI * sylPos / sylOn).toFloat())
-            }
-            if (++sylPos >= sylTotal) {
-                sylPos = 0
-                if (--syllablesLeft <= 0) {
-                    state = 0
-                    counter = (SAMPLE_RATE * (0.6f + r.nextFloat() * 2.8f)).toInt()
-                }
-            }
-            phase += inc
-            if (phase > 2 * PI) phase -= 2 * PI
-            val s = sin(phase).toFloat() * amp * 0.16f
-            out[0] += s * gainL
-            out[1] += s * gainR
-        }
-    }
-
-    private val crickets = arrayOf(Cricket(101), Cricket(202), Cricket(303))
-    private val chirp = FloatArray(2)
-
-    override fun render(left: FloatArray, right: FloatArray, frames: Int) {
-        for (i in 0 until frames) {
-            val rustle = bedLp.process(rnd.bipolar()) * 0.16f
-            chirp[0] = 0f
-            chirp[1] = 0f
-            for (c in crickets) c.sample(chirp)
-            left[i] = bedL.next(rnd.bipolar()) * 0.22f + rustle + chirp[0]
-            right[i] = bedR.next(rnd.bipolar()) * 0.22f + rustle + chirp[1]
-        }
-    }
-}
-
-/**
- * Campfire: a warm low rumble with random crackles and the
- * occasional louder, lower-pitched pop.
- */
-class Campfire : SoundGenerator {
-    private val rnd = Random(13)
-    private val rumbleL = BrownFilter()
-    private val rumbleR = BrownFilter()
-    private val rumbleLp = Biquad().lowpass(260f)
-    private val crackles = BurstPool(16)
-    private val burst = FloatArray(2)
-    private val crackleChance = 11f / SAMPLE_RATE
-    private val popChance = 0.7f / SAMPLE_RATE
-
-    override fun render(left: FloatArray, right: FloatArray, frames: Int) {
-        for (i in 0 until frames) {
-            if (rnd.nextFloat() < crackleChance) {
-                crackles.spawn(
-                    rnd,
-                    amp = 0.15f + rnd.nextFloat() * 0.40f,
-                    decayMs = 3f + rnd.nextFloat() * 18f,
-                    centerHz = 900f + rnd.nextFloat() * 3200f,
-                    q = 1.6f
-                )
-            }
-            if (rnd.nextFloat() < popChance) {
-                crackles.spawn(
-                    rnd,
-                    amp = 0.5f + rnd.nextFloat() * 0.35f,
-                    decayMs = 25f + rnd.nextFloat() * 50f,
-                    centerHz = 260f + rnd.nextFloat() * 500f,
-                    q = 1.1f
-                )
-            }
-            val glow = rumbleLp.process(rnd.bipolar()) * 0.30f
-            crackles.sample(rnd, burst)
-            left[i] = rumbleL.next(rnd.bipolar()) * 0.45f + glow + burst[0]
-            right[i] = rumbleR.next(rnd.bipolar()) * 0.45f + glow + burst[1]
-        }
-    }
-}
+// Campfire was replaced by CampfireV2 in Nature.kt (clustered crackle taxonomy).
 
 /**
  * Box fan: a soft motor hum (fundamental + harmonics), a gentle blade
@@ -458,9 +313,34 @@ enum class Sound(
         ),
         ::OceanV2,
     ),
-    WIND("Wind", "🍃", "Gusts drifting through the dark", Category.MIX, emptyList(), ::Wind),
-    FOREST("Forest night", "🌲", "Crickets in a quiet wood", Category.MIX, emptyList(), ::ForestNight),
-    FIRE("Campfire", "🔥", "Crackling embers, warm rumble", Category.MIX, emptyList(), ::Campfire),
+    WIND(
+        "Wind", "🍃", "Buffet, whoosh, and foliage riding one gust engine",
+        Category.MIX,
+        listOf(
+            Param("strength", "Strength", 0f, 1f, 0.5f),
+            Param("gustiness", "Gustiness", 0f, 1f, 0.5f),
+            Param("foliage", "Foliage", 0f, 1f, 0.4f),
+        ),
+        ::WindV2,
+    ),
+    FOREST(
+        "Forest night", "🌲", "Cricket wash, katydids, and rare rustles",
+        Category.MIX,
+        listOf(
+            Param("life", "Life", 0f, 1f, 0.5f),
+            Param("breeze", "Breeze", 0f, 1f, 0.35f),
+        ),
+        ::ForestNightV2,
+    ),
+    FIRE(
+        "Campfire", "🔥", "Breathing flames, clustered crackles, log settles",
+        Category.MIX,
+        listOf(
+            Param("size", "Fire size", 0f, 1f, 0.5f),
+            Param("crackle", "Crackle", 0f, 1f, 0.5f),
+        ),
+        ::CampfireV2,
+    ),
     FAN("Box fan", "💨", "Low motor hum and moving air", Category.MIX, emptyList(), ::BoxFan),
     FANSIM(
         "Simulated fan", "🌪️", "Physically modeled fan — tap Tune to shape it",

@@ -12,9 +12,9 @@ A sleep-sound app for Android where **every sound is synthesized mathematically 
 | 🌀 Deep tones | Binaural beat: 110 Hz left / 114 Hz right → 4 Hz delta-wave perception |
 | 🌧️ Rain | Five-layer rainfall: distant wash, dense grain patter, close splats, canopy hiss, gutter drips — one coherent gust LFO drives them all. Params: intensity, surface, drips |
 | 🌊 Ocean | Three overlapping wave voices (build → soft break → long wash with foam grains) over a constant sea bed; crest dynamics capped for sleep. Params: swell, period, foam |
-| 🍃 Wind | White noise through a resonant bandpass whose center frequency and gain wander like gusts |
-| 🦗 Forest night | Pink-noise foliage + three synthesized crickets (pulsed ~4 kHz sine syllables) |
-| 🔥 Campfire | Brown rumble + random band-passed crackles and occasional low pops |
+| 🍃 Wind | Gust engine (weather/gust/flutter timescales) driving lagged layers: sub-100 Hz buffet, three parallel wandering whoosh bands, fast foliage hiss, rare gust-peak whistle. Params: strength, gustiness, foliage |
+| 🌲 Forest night | Distant cricket wash + three individual near crickets (with dropouts) + raspy katydids + breeze rustles + rare one-off events (twig snap, animal rustle, night-bird note). Params: life, breeze |
+| 🔥 Campfire | Breathing flame roar (wandering 3–12 Hz flicker), three crackle populations arriving in flurries, log-settle whumps, sizzle trains, ember shimmer. Params: size, crackle |
 | 💨 Box fan | 53 Hz motor hum with harmonics, blade wobble, low-passed air noise |
 | 🌪️ Simulated fan | Physical fan model: hum harmonics at the blade-pass frequency, per-blade-modulated turbulence, tip-vortex whoosh; tunable speed (rpm), blade count, size, distance, oscillation |
 | 🚂 Night train | Rolling brown drone with a rhythmic clickety-clack burst pattern |
@@ -74,6 +74,7 @@ The release build is signed with the checked-in development keystore at `signing
 - `audio/Generators.kt` — main sound generators + the catalog (sounds, elements, parameters)
 - `audio/Elements.kt`, `audio/Elements2.kt` — parameterized ambient elements
 - `audio/Water.kt` — layered rain / ocean / water-drop models
+- `audio/Nature.kt` — campfire / wind / forest-night models
 - `audio/SimulatedFan.kt` — physically-inspired fan model
 - `audio/Space.kt` — stereo width + room diffusion, per-sound tilt filter
 - `audio/Drift.kt` — slow mix-evolution engine
