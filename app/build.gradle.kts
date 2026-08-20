@@ -12,8 +12,8 @@ android {
         applicationId = "com.sleepslop"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9
-        versionName = "2.2.0"
+        versionCode = 10
+        versionName = "2.3.0"
     }
 
     signingConfigs {

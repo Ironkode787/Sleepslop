@@ -138,48 +138,6 @@ class DeepTones : SoundGenerator {
 // Textured scenes (still 100% synthesized)
 // ---------------------------------------------------------------------------
 
-/** Shared machinery: a pool of short decaying noise bursts (drops, crackles). */
-private class BurstPool(size: Int) {
-    val env = FloatArray(size)
-    val decay = FloatArray(size)
-    val gainL = FloatArray(size)
-    val gainR = FloatArray(size)
-    val filter = Array(size) { Biquad() }
-    val size = size
-
-    /** Returns the index of a free slot, or -1. */
-    fun freeSlot(): Int {
-        for (i in 0 until size) if (env[i] < 0.001f) return i
-        return -1
-    }
-
-    fun spawn(rnd: Random, amp: Float, decayMs: Float, centerHz: Float, q: Float) {
-        val s = freeSlot()
-        if (s < 0) return
-        env[s] = amp
-        decay[s] = (0.001f / amp).pow(1f / (decayMs / 1000f * SAMPLE_RATE))
-        val pan = rnd.nextFloat() * (PI / 2).toFloat()
-        gainL[s] = cos(pan)
-        gainR[s] = sin(pan)
-        filter[s].bandpass(centerHz, q)
-    }
-
-    /** Sum of all active bursts for one sample; also advances envelopes. */
-    fun sample(rnd: Random, outLR: FloatArray) {
-        var l = 0f
-        var r = 0f
-        for (i in 0 until size) {
-            if (env[i] < 0.001f) continue
-            val burst = filter[i].process(rnd.bipolar()) * env[i]
-            l += burst * gainL[i]
-            r += burst * gainR[i]
-            env[i] *= decay[i]
-        }
-        outLR[0] = l
-        outLR[1] = r
-    }
-}
-
 // Wind was replaced by WindV2 in Nature.kt (multi-band gust engine).
 
 // ForestNight was replaced by ForestNightV2 in Nature.kt (layered distances).
@@ -213,39 +171,7 @@ class BoxFan : SoundGenerator {
     }
 }
 
-/**
- * Night train: distant rhythmic rumble — clickety-clack softened into a
- * hypnotic rocking pattern over a low rolling drone.
- */
-class NightTrain : SoundGenerator {
-    private val rnd = Random(47)
-    private val droneL = BrownFilter()
-    private val droneR = BrownFilter()
-    private val droneLp = Biquad().lowpass(200f)
-    private val clacks = BurstPool(8)
-    private val burst = FloatArray(2)
-    private var beat = 0
-    private val beatLen = (0.62f * SAMPLE_RATE).toInt()
-
-    override fun render(left: FloatArray, right: FloatArray, frames: Int) {
-        for (i in 0 until frames) {
-            if (beat == 0 || beat == (0.14f * SAMPLE_RATE).toInt()) {
-                clacks.spawn(
-                    rnd,
-                    amp = 0.20f + rnd.nextFloat() * 0.10f,
-                    decayMs = 35f + rnd.nextFloat() * 20f,
-                    centerHz = 130f + rnd.nextFloat() * 90f,
-                    q = 1.0f
-                )
-            }
-            if (++beat >= beatLen) beat = 0
-            val roll = droneLp.process(rnd.bipolar()) * 0.35f
-            clacks.sample(rnd, burst)
-            left[i] = droneL.next(rnd.bipolar()) * 0.50f + roll + burst[0]
-            right[i] = droneR.next(rnd.bipolar()) * 0.50f + roll + burst[1]
-        }
-    }
-}
+// NightTrain was replaced by NightTrainV2 in Train.kt (bogie-geometry model).
 
 // ---------------------------------------------------------------------------
 // Catalog
@@ -355,7 +281,16 @@ enum class Sound(
         ),
         ::SimulatedFan,
     ),
-    TRAIN("Night train", "🚂", "Hypnotic clickety-clack, far away", Category.MIX, emptyList(), ::NightTrain),
+    TRAIN(
+        "Night train", "🚂", "A real consist rolling over real rail joints",
+        Category.MIX,
+        listOf(
+            Param("speed", "Speed", 0f, 1f, 0.5f),
+            Param("distance", "Distance", 0f, 1f, 0.4f),
+            Param("rails", "Jointed rail", 0f, 1f, 0.6f),
+        ),
+        ::NightTrainV2,
+    ),
 
     // ------------------------------------------------------------ elements
     CRICKETS(

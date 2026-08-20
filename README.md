@@ -17,7 +17,7 @@ A sleep-sound app for Android where **every sound is synthesized mathematically 
 | 🔥 Campfire | Breathing flame roar (wandering 3–12 Hz flicker), three crackle populations arriving in flurries, log-settle whumps, sizzle trains, ember shimmer. Params: size, crackle |
 | 💨 Box fan | 53 Hz motor hum with harmonics, blade wobble, low-passed air noise |
 | 🌪️ Simulated fan | Physical fan model: hum harmonics at the blade-pass frequency, per-blade-modulated turbulence, tip-vortex whoosh; tunable speed (rpm), blade count, size, distance, oscillation |
-| 🚂 Night train | Rolling brown drone with a rhythmic clickety-clack burst pattern |
+| 🚂 Night train | Geometry simulation: 20 axles at real car/bogie offsets crossing real jointed-rail positions produce the authentic clack-clack…clack-clack lilt; rolling drone with coach sway, wind rush, distant horns, bridge passages. Params: speed, distance (inside ↔ across the valley), jointed rail |
 
 ## Elements
 
@@ -75,6 +75,7 @@ The release build is signed with the checked-in development keystore at `signing
 - `audio/Elements.kt`, `audio/Elements2.kt` — parameterized ambient elements
 - `audio/Water.kt` — layered rain / ocean / water-drop models
 - `audio/Nature.kt` — campfire / wind / forest-night models
+- `audio/Train.kt` — bogie-geometry night-train model
 - `audio/SimulatedFan.kt` — physically-inspired fan model
 - `audio/Space.kt` — stereo width + room diffusion, per-sound tilt filter
 - `audio/Drift.kt` — slow mix-evolution engine
