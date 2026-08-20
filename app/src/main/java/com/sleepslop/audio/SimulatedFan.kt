@@ -20,6 +20,9 @@ import kotlin.random.Random
  *    slightly-unbalanced wobble of a real fan.
  *  - **Vortex whoosh**: a resonant mid band whose center rises with speed,
  *    the sound of vortices shed from the blade tips.
+ *  - **Motor buzz**: magnetic hum at twice the mains frequency (100 Hz) with
+ *    a raspy 1/k harmonic tail and a light ~11 Hz winding flutter. Electrical,
+ *    so its pitch stays fixed as rpm changes — only its level rises with load.
  *  - **Distance**: one-pole air-absorption lowpass plus level drop.
  *  - **Oscillation**: a slow constant-power pan sweep with a gain dip at
  *    the extremes, like an oscillating stand fan turning past you.
@@ -35,6 +38,7 @@ class SimulatedFan : SoundGenerator {
     @Volatile private var size = 0.5f
     @Volatile private var distance = 0.35f
     @Volatile private var sway = 0f
+    @Volatile private var buzz = 0.3f
 
     override fun setParam(id: String, value: Float) {
         when (id) {
@@ -43,6 +47,7 @@ class SimulatedFan : SoundGenerator {
             "size" -> size = value
             "distance" -> distance = value
             "sway" -> sway = value
+            "buzz" -> buzz = value
         }
     }
 
@@ -51,6 +56,7 @@ class SimulatedFan : SoundGenerator {
     private var sizeS = 0.5f
     private var distS = 0.35f
     private var swayS = 0f
+    private var buzzS = 0.3f
 
     private val rnd = Random(2718)
     private val bladeGains = FloatArray(7) { 0.85f + rnd.nextFloat() * 0.30f }
@@ -60,6 +66,13 @@ class SimulatedFan : SoundGenerator {
     private val humIncs = DoubleArray(4)
     private val humAmps = FloatArray(4)
     private var oscPhase = 0.0
+
+    // Electrical motor buzz: magnetic hum at 2x mains (100 Hz) with a raspy
+    // harmonic tail and a light flutter, as if a winding lamination is loose.
+    private val buzzPhases = DoubleArray(8)
+    private val buzzIncs = DoubleArray(8)
+    private val buzzAmps = FloatArray(8)
+    private var flutterPhase = 0.0
 
     private val turbLpL = OnePoleLp().setCutoff(1500f)
     private val turbLpR = OnePoleLp().setCutoff(1500f)
@@ -93,6 +106,18 @@ class SimulatedFan : SoundGenerator {
         for (k in 0..3) {
             humIncs[k] = 2.0 * PI * bpf * (k + 1) / SAMPLE_RATE
             humAmps[k] = humBase * harmonicAmps[k]
+        }
+
+        // Motor buzz: fixed 100 Hz mains fundamental (independent of rpm —
+        // it's electrical, not mechanical), 1/k harmonic rolloff for rasp,
+        // level rising modestly with load (speed). Normalized by the harmonic
+        // series sum (~2.72) so buzz=1 contributes ~0.11 peak before the
+        // distance lowpass.
+        buzzS += (buzz - buzzS) * 0.06f
+        val buzzBase = 0.11f * buzzS * (0.45f + 0.55f * speed) / 2.72f
+        for (k in 0..7) {
+            buzzIncs[k] = 2.0 * PI * 100.0 * (k + 1) / SAMPLE_RATE
+            buzzAmps[k] = buzzBase / (k + 1)
         }
 
         // Turbulence: aerodynamic noise grows ~quadratically with speed;
@@ -137,6 +162,20 @@ class SimulatedFan : SoundGenerator {
                 humPhases[k] += humIncs[k]
                 if (humPhases[k] > 2 * PI) humPhases[k] -= 2 * PI
                 hum += sin(humPhases[k]).toFloat() * humAmps[k]
+            }
+
+            // Motor buzz with winding flutter.
+            var buzzSum = 0f
+            if (buzzS > 0.005f) {
+                for (k in 0..7) {
+                    buzzPhases[k] += buzzIncs[k]
+                    if (buzzPhases[k] > 2 * PI) buzzPhases[k] -= 2 * PI
+                    buzzSum += sin(buzzPhases[k]).toFloat() * buzzAmps[k]
+                }
+                flutterPhase += TWO_PI_D * 10.7 / SAMPLE_RATE
+                if (flutterPhase > 2 * PI) flutterPhase -= 2 * PI
+                buzzSum *= 1f + 0.10f * sin(flutterPhase).toFloat()
+                hum += buzzSum
             }
 
             // Air.
