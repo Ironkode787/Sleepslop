@@ -16,7 +16,7 @@ A sleep-sound app for Android where **every sound is synthesized mathematically 
 | 🌲 Forest night | Distant cricket wash + three individual near crickets (with dropouts) + raspy katydids + breeze rustles + rare one-off events (twig snap, animal rustle, night-bird note). Params: life, breeze |
 | 🔥 Campfire | Breathing flame roar (wandering 3–12 Hz flicker), three crackle populations arriving in flurries, log-settle whumps, sizzle trains, ember shimmer. Params: size, crackle |
 | 💨 Box fan | 53 Hz motor hum with harmonics, blade wobble, low-passed air noise |
-| 🌪️ Simulated fan | Physical fan model: hum harmonics at the blade-pass frequency, per-blade-modulated turbulence, tip-vortex whoosh; tunable speed (rpm), blade count, size, distance, oscillation |
+| 🌪️ Simulated fan | Physical fan model: blade-pass hum harmonics, the box fan's warm 53 Hz motor growl (rpm-tracking, with blade wobble), 100 Hz mains buzz, per-blade-modulated turbulence, tip-vortex whoosh. Params: speed (rpm), blades, motor hum, motor buzz, size, distance, oscillation |
 | 🚂 Night train | Geometry simulation: 20 axles at real car/bogie offsets crossing real jointed-rail positions produce the authentic clack-clack…clack-clack lilt; rolling drone with coach sway, wind rush, distant horns, bridge passages. Params: speed, distance (inside ↔ across the valley), jointed rail |
 
 ## Elements

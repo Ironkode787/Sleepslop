@@ -274,6 +274,7 @@ enum class Sound(
         listOf(
             Param("rpm", "Speed", 500f, 1600f, 1050f, "rpm"),
             Param("blades", "Blades", 3f, 7f, 5f, integer = true),
+            Param("hum", "Motor hum", 0f, 1f, 0.35f),
             Param("buzz", "Motor buzz", 0f, 1f, 0.3f),
             Param("size", "Fan size", 0f, 1f, 0.5f),
             Param("distance", "Distance", 0f, 1f, 0.35f),
