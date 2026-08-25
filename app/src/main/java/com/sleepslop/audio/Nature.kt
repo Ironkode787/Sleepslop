@@ -6,6 +6,7 @@ import kotlin.math.exp
 import kotlin.math.ln
 import kotlin.math.pow
 import kotlin.math.sin
+import kotlin.math.sqrt
 import kotlin.random.Random
 
 /**
@@ -961,9 +962,88 @@ private class NatKatydid(seed: Int) {
     }
 }
 
+
 // ---------------------------------------------------------------------------
 // Forest night
 // ---------------------------------------------------------------------------
+
+/**
+ * One spring peeper — a tree frog whose whole call is a short, clean whistled
+ * "peep" near 2.8 kHz with a quick upward slur. Peepers call steadily during
+ * a bout (6–18 peeps, ~one per second), then fall silent for a long stretch.
+ * Two resolvable voices plus the distant chorus wash in [ForestNightV2] read
+ * instantly as "there is a wetland out past the trees".
+ */
+private class NatPeeper(seed: Int) {
+    private val r = Random(seed)
+    private val lp = Biquad()
+    private val gainL: Float
+    private val gainR: Float
+    private val amp: Float
+    private val baseF: Float
+    private val interval: Float
+
+    private var boutLeft = 0
+    private var wait: Int
+    private var pos = 0
+    private var len = 0
+    private var phase = 0.0
+    private var inc = 0.0
+    private var glide = 1.0
+
+    init {
+        val near = r.nextFloat()
+        lp.lowpass(3200f + 2800f * near, 0.7f)
+        amp = 0.09f + 0.10f * near
+        baseF = 2550f + r.nextFloat() * 500f
+        interval = 0.75f + r.nextFloat() * 0.70f
+        val p = (0.15f + r.nextFloat() * 0.70f) * NT_HALF_PI
+        gainL = cos(p)
+        gainR = sin(p)
+        wait = (r.nextFloat() * 20f * SAMPLE_RATE).toInt() + SAMPLE_RATE
+    }
+
+    private fun startPeep() {
+        pos = 0
+        len = ((0.065f + r.nextFloat() * 0.030f) * SAMPLE_RATE).toInt()
+        phase = 0.0
+        val f = baseF * (1f + 0.04f * (r.nextFloat() * 2f - 1f))
+        inc = NT_TWO_PI * f / SAMPLE_RATE
+        glide = exp(ln(1.06) / len)
+    }
+
+    fun sample(acc: FloatArray, vox: Float) {
+        if (pos < len) {
+            phase += inc
+            inc *= glide
+            if (phase > NT_TWO_PI) phase -= NT_TWO_PI
+            val u = pos.toFloat() / len
+            var e = when {
+                u < 0.18f -> u / 0.18f
+                u > 0.62f -> (1f - u) / 0.38f
+                else -> 1f
+            }
+            e *= e
+            val s = (sin(phase).toFloat() + 0.12f * sin(2.0 * phase).toFloat()) *
+                e * amp * (0.40f + 0.60f * vox)
+            val o = lp.process(s)
+            acc[0] += o * gainL
+            acc[1] += o * gainR
+            pos++
+        } else if (--wait <= 0) {
+            if (boutLeft > 0) {
+                boutLeft--
+                startPeep()
+                wait = ((interval * (0.88f + r.nextFloat() * 0.24f)) * SAMPLE_RATE).toInt()
+            } else if (r.nextFloat() < 0.05f + 0.50f * vox) {
+                boutLeft = 6 + r.nextInt(13)
+                wait = 1
+            } else {
+                wait = ((6f + r.nextFloat() * 18f) * SAMPLE_RATE).toInt()
+            }
+        }
+    }
+}
 
 /**
  * **ForestNightV2** — a night forest is a *space* with layered distances and
@@ -989,6 +1069,14 @@ private class NatKatydid(seed: Int) {
  *    gust times a 0.8–2.5 s flutter driving a 2–7 kHz leaf hiss, scaled by
  *    `breeze`. On top, every 8–25 s a *single tree* rustles: a 2–5 s swell at
  *    its own drifting stereo position, so the breeze has geography.
+ *  - **Night voices** (`voices`) — the wetland-and-sky population: two
+ *    resolvable spring peepers calling in bouts, a distant blurred peeper
+ *    chorus that rises with the slider, and a far owl that delivers a soft
+ *    two-hoot phrase every couple of minutes through heavy air absorption.
+ *  - **Stream** (`water`) — a small brook off to one side: two burbling
+ *    bandpass streams with fast independent level flutter, plus occasional
+ *    rising "glug" bubbles, all under a gentle absorption lowpass and a slow
+ *    level wander so it never sounds like a fountain pump.
  *  - **Rare one-off events** — every 1–3 min (scaled by `life`), one of: a twig
  *    snap (a single dull low click), an animal rustle (0.3–0.8 s of scuffling
  *    foliage with an irregular internal envelope), or a lonely night-bird note
@@ -999,29 +1087,29 @@ private class NatKatydid(seed: Int) {
  *    goes digitally black between events.
  *
  * Params: `life` 0..1 (0.5) — cricket/katydid density and event rate;
- * `breeze` 0..1 (0.35) — the foliage layer.
- *
- * Measured at defaults over 5 min: RMS 0.046, peak 0.29, 300 ms window level
- * moving 3.6 dB. Event traffic at defaults: 0.49 near-cricket chirps/s across
- * the three voices, 0.21 katydid groups/s, a single-tree rustle every ~19 s and
- * a rare one-off every ~100 s (150 s at `life` = 0, 46 s at `life` = 1). It is
- * deliberately the quietest of the three — an ambience meant to sit under the
- * others — but still above the old class's 0.050 in perceived content.
+ * `breeze` 0..1 (0.35) — the foliage layer; `voices` 0..1 (0.4) — peepers and
+ * owl; `water` 0..1 (0.25) — the brook.
  */
 class ForestNightV2 : SoundGenerator {
 
     @Volatile private var life = 0.5f
     @Volatile private var breeze = 0.35f
+    @Volatile private var voices = 0.4f
+    @Volatile private var water = 0.25f
 
     override fun setParam(id: String, value: Float) {
         when (id) {
             "life" -> life = value.coerceIn(0f, 1f)
             "breeze" -> breeze = value.coerceIn(0f, 1f)
+            "voices" -> voices = value.coerceIn(0f, 1f)
+            "water" -> water = value.coerceIn(0f, 1f)
         }
     }
 
     private var lifeS = 0.5f
     private var brzS = 0.35f
+    private var voxS = 0.4f
+    private var watS = 0.25f
 
     private val rnd = Random(80553)
 
@@ -1041,6 +1129,48 @@ class ForestNightV2 : SoundGenerator {
     private val crickets = arrayOf(NatCricket(4001), NatCricket(4133), NatCricket(4271))
     private val katydids = arrayOf(NatKatydid(5101), NatKatydid(5237))
     private val acc = FloatArray(2)
+
+    // --- night voices: peepers ------------------------------------------------
+    private val peepers = arrayOf(NatPeeper(6101), NatPeeper(6247))
+    private val peepWashL = Biquad().bandpass(2900f, 14f)
+    private val peepWashR = Biquad().bandpass(2955f, 14f)
+    private val peepWashThrob = NatWander(373, 0.45f, 1.0f, 0.7f, 1.8f, 0.4f)
+
+    // --- night voices: far owl -------------------------------------------------
+    private val owlLp = Biquad().lowpass(750f, 0.7f)
+    private var owlCountdown = (35f * SAMPLE_RATE).toInt()
+    private var owlStage = -1            // -1 idle, 0 first hoot, 1 gap, 2 second hoot
+    private var owlPos = 0
+    private var owlLen = 0
+    private var owlPhase = 0.0
+    private var owlInc = 0.0
+    private var owlAmp = 0f
+    private var owlPanL = 0.7f
+    private var owlPanR = 0.7f
+
+    // --- stream ------------------------------------------------------------------
+    private val brookBp1L = Biquad().bandpass(950f, 1.1f)
+    private val brookBp1R = Biquad().bandpass(1000f, 1.1f)
+    private val brookBp2L = Biquad().bandpass(1850f, 1.3f)
+    private val brookBp2R = Biquad().bandpass(1930f, 1.3f)
+    private val brookLpL = Biquad().lowpass(3200f, 0.7f)
+    private val brookLpR = Biquad().lowpass(3100f, 0.7f)
+    private val brookLevel = NatWander(361, 0.78f, 1.18f, 6f, 16f, 5f)
+    private var burble1 = 0.5f
+    private var burble1T = 0.5f
+    private var burble2 = 0.5f
+    private var burble2T = 0.5f
+    private val kBurble = 1f - exp(-1f / (0.020f * SAMPLE_RATE))
+    private var glugCountdown = (2f * SAMPLE_RATE).toInt()
+    private var glugPos = 0
+    private var glugLen = 0
+    private var glugPhase = 0.0
+    private var glugInc = 0.0
+    private var glugGlide = 1.0
+    private var glugAmp = 0f
+    // The brook sits off to one side of the scene.
+    private val brookPanL = cos(0.68f)
+    private val brookPanR = sin(0.68f)
 
     // --- foliage breeze -------------------------------------------------------
     private val leafHpL = Biquad().highpass(2000f, 0.7f)
@@ -1106,10 +1236,14 @@ class ForestNightV2 : SoundGenerator {
     private var leafGain = 0f
     private var treeGain = 0f
     private var airGain = 0f
+    private var peepWashGain = 0f
+    private var brookGain = 0f
 
     private fun updateBlock() {
         lifeS += (life - lifeS) * 0.05f
         brzS += (breeze - brzS) * 0.05f
+        voxS += (voices - voxS) * 0.05f
+        watS += (water - watS) * 0.05f
 
         washTone.step(NT_BLOCK)
         washLevel.step(NT_BLOCK)
@@ -1118,6 +1252,8 @@ class ForestNightV2 : SoundGenerator {
         brzMid.step(NT_BLOCK)
         brzFast.step(NT_BLOCK)
         airLevel.step(NT_BLOCK)
+        peepWashThrob.step(NT_BLOCK)
+        brookLevel.step(NT_BLOCK)
 
         val wt = washTone.value
         washAL.bandpass(wt, 7f)
@@ -1136,6 +1272,16 @@ class ForestNightV2 : SoundGenerator {
         treeGain = TREE_GAIN * (0.35f + 0.85f * brzS)
 
         airGain = AIR_GAIN * airLevel.value
+
+        // Distant peeper chorus rises once the voices slider passes ~0.25.
+        peepWashGain = PEEP_WASH_GAIN * ((voxS - 0.25f) / 0.75f).coerceIn(0f, 1f) *
+            peepWashThrob.value
+
+        // Brook burble targets renew a few times a second.
+        if (rnd.nextFloat() < 0.035f) burble1T = rnd.nextFloat()
+        if (rnd.nextFloat() < 0.035f) burble2T = rnd.nextFloat()
+        // sqrt curve: the stream is already clearly present at the 0.25 default.
+        brookGain = BROOK_GAIN * sqrt(watS) * brookLevel.value
     }
 
     /** Fires one rare one-off: a twig snap, an animal rustle or a bird note. */
@@ -1183,6 +1329,19 @@ class ForestNightV2 : SoundGenerator {
         }
     }
 
+    /** Starts the far owl's two-hoot phrase. */
+    private fun startOwl() {
+        owlStage = 0
+        owlPos = 0
+        owlLen = ((0.30f + rnd.nextFloat() * 0.12f) * SAMPLE_RATE).toInt()
+        owlPhase = 0.0
+        owlInc = NT_TWO_PI * (330.0 + rnd.nextDouble() * 40.0) / SAMPLE_RATE
+        owlAmp = (0.060f + rnd.nextFloat() * 0.025f) * (0.30f + 0.70f * voxS)
+        val p = (0.25f + rnd.nextFloat() * 0.50f) * NT_HALF_PI
+        owlPanL = cos(p)
+        owlPanR = sin(p)
+    }
+
     override fun render(left: FloatArray, right: FloatArray, frames: Int) {
         for (i in 0 until frames) {
             if (--blockCountdown <= 0) {
@@ -1208,6 +1367,88 @@ class ForestNightV2 : SoundGenerator {
             for (k in katydids) k.sample(kn, acc, lifeS)
             l += acc[0]
             r += acc[1]
+
+            // --- night voices: peepers and their distant chorus ------------------
+            if (voxS > 0.01f) {
+                acc[0] = 0f
+                acc[1] = 0f
+                for (p in peepers) p.sample(acc, voxS)
+                l += acc[0]
+                r += acc[1]
+                if (peepWashGain > 0.0005f) {
+                    l += peepWashL.process(rnd.nbi()) * peepWashGain
+                    r += peepWashR.process(rnd.nbi()) * peepWashGain
+                }
+
+                // Far owl: two soft hoots through a lot of air.
+                if (owlStage >= 0) {
+                    var hoot = 0f
+                    if (owlStage == 0 || owlStage == 2) {
+                        owlPhase += owlInc
+                        if (owlPhase > NT_TWO_PI) owlPhase -= NT_TWO_PI
+                        val u = owlPos.toFloat() / owlLen
+                        val e = NT_HANN[(256f * u).toInt().coerceIn(0, 256)]
+                        hoot = (sin(owlPhase).toFloat() + 0.25f * sin(2.0 * owlPhase).toFloat()) *
+                            e * owlAmp
+                    }
+                    val o = owlLp.process(hoot)
+                    l += o * owlPanL
+                    r += o * owlPanR
+                    if (++owlPos >= owlLen) {
+                        owlPos = 0
+                        owlStage++
+                        when (owlStage) {
+                            1 -> owlLen = (0.50f * SAMPLE_RATE).toInt()      // between hoots
+                            2 -> {
+                                owlLen = ((0.36f + rnd.nextFloat() * 0.14f) * SAMPLE_RATE).toInt()
+                                owlPhase = 0.0
+                                owlInc *= 0.965                              // second hoot sags
+                            }
+                            else -> owlStage = -1
+                        }
+                    }
+                } else if (--owlCountdown <= 0) {
+                    owlCountdown = ((70f + rnd.nextFloat() * 120f) *
+                        (1.5f - voxS).coerceAtLeast(0.5f) * SAMPLE_RATE).toInt()
+                    startOwl()
+                }
+            }
+
+            // --- stream -----------------------------------------------------------
+            if (watS > 0.01f) {
+                burble1 += (burble1T - burble1) * kBurble
+                burble2 += (burble2T - burble2) * kBurble
+                val b1 = 0.35f + 0.90f * burble1
+                val b2 = 0.30f + 0.80f * burble2
+                var bl = brookBp1L.process(rnd.nbi()) * b1 + brookBp2L.process(rnd.nbi()) * b2 * 0.8f
+                var br = brookBp1R.process(rnd.nbi()) * b1 + brookBp2R.process(rnd.nbi()) * b2 * 0.8f
+
+                // Rising glug bubbles.
+                if (glugPos < glugLen) {
+                    glugPhase += glugInc
+                    glugInc *= glugGlide
+                    if (glugPhase > NT_TWO_PI) glugPhase -= NT_TWO_PI
+                    val u = glugPos.toFloat() / glugLen
+                    val e = (u / 0.05f).coerceAtMost(1f) * (1f - u).pow(2.2f)
+                    val g = sin(glugPhase).toFloat() * e * glugAmp
+                    bl += g
+                    br += g * 0.8f
+                    glugPos++
+                } else if (--glugCountdown <= 0) {
+                    glugCountdown = ((0.8f + rnd.nextFloat() * 3.5f) / watS.coerceAtLeast(0.15f) *
+                        SAMPLE_RATE).toInt()
+                    glugLen = ((0.055f + rnd.nextFloat() * 0.055f) * SAMPLE_RATE).toInt()
+                    glugPos = 0
+                    glugPhase = 0.0
+                    val f0 = 260.0 + rnd.nextDouble() * 260.0
+                    glugInc = NT_TWO_PI * f0 / SAMPLE_RATE
+                    glugGlide = exp(ln(1.35) / glugLen)
+                    glugAmp = 0.30f + rnd.nextFloat() * 0.35f
+                }
+
+                l += brookLpL.process(bl) * brookGain * brookPanL
+                r += brookLpR.process(br) * brookGain * brookPanR
+            }
 
             // --- foliage breeze ---------------------------------------------------
             l += leafLpL.process(leafHpL.process(rnd.nbi())) * leafGain
@@ -1290,5 +1531,7 @@ class ForestNightV2 : SoundGenerator {
         const val LEAF_GAIN = 0.235f
         const val TREE_GAIN = 0.21f
         const val AIR_GAIN = 0.16f
+        const val PEEP_WASH_GAIN = 0.085f
+        const val BROOK_GAIN = 0.26f
     }
 }

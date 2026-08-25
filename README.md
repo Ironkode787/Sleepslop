@@ -13,7 +13,7 @@ A sleep-sound app for Android where **every sound is synthesized mathematically 
 | 🌧️ Rain | Five-layer rainfall: distant wash, dense grain patter, close splats, canopy hiss, gutter drips — one coherent gust LFO drives them all. Params: intensity, surface, drips |
 | 🌊 Ocean | Three overlapping wave voices (build → soft break → long wash with foam grains) over a constant sea bed; crest dynamics capped for sleep. Params: swell, period, foam |
 | 🍃 Wind | Gust engine (weather/gust/flutter timescales) driving lagged layers: sub-100 Hz buffet, three parallel wandering whoosh bands, fast foliage hiss, rare gust-peak whistle. Params: strength, gustiness, foliage |
-| 🌲 Forest night | Distant cricket wash + three individual near crickets (with dropouts) + raspy katydids + breeze rustles + rare one-off events (twig snap, animal rustle, night-bird note). Params: life, breeze |
+| 🌲 Forest night | Distant cricket wash + three individual near crickets (with dropouts) + raspy katydids + breeze rustles + spring peepers calling in bouts over a blurred wetland chorus + a far two-hoot owl + a burbling brook with rising glug bubbles + rare one-off events (twig snap, animal rustle, night-bird note). Params: life, breeze, night voices, stream |
 | 🔥 Campfire | Breathing flame roar (wandering 3–12 Hz flicker), three crackle populations arriving in flurries, log-settle whumps, sizzle trains, ember shimmer. Params: size, crackle |
 | 💨 Box fan | 53 Hz motor hum with harmonics, blade wobble, low-passed air noise |
 | 🌪️ Simulated fan | Physical fan model: blade-pass hum harmonics, the box fan's warm 53 Hz motor growl (rpm-tracking, with blade wobble), 100 Hz mains buzz, per-blade-modulated turbulence, tip-vortex whoosh. Params: speed (rpm), blades, motor hum, motor buzz, size, distance, oscillation |
@@ -28,14 +28,14 @@ A second tab of modular ambient components, each with its own occurrence/charact
 | 🦗 Crickets | chirp rate, swarm size (1–6 voices), pitch |
 | 🐸 Frogs | croak rate, pitch (pulsed two-harmonic croaks with downward glide) |
 | 🦉 Owl | hoot rate, pitch ("hoo-hoo-hoooo" with vibrato on the long note) |
-| ⛈️ Distant thunder | storm activity, distance (texture-modulated brown rumbles) |
+| ⛈️ Distant thunder | storm activity, distance — each strike is 4–8 overlapping sub-peals rolling 10–25 s across the sky with resurgences, a felt whump up close, and a breathing storm bed between strikes |
 | 🎐 Wind chimes | breeze (gust-clustered strikes), shimmer (pentatonic two-partial tones) |
 | 💓 Heartbeat | tempo, softness (lub-dub with downward pitch glide; womb-like when soft) |
 | 🐈 Cat purr | purr rate, breathiness (pulse train with inhale/exhale alternation) |
 | 🕰️ Clock tick | tempo, mellowness (impulse-excited wooden resonances) |
 | ☕ Café murmur | crowd, clatter (formant-filtered babble voices, soft clinks) |
 | 🚢 Foghorn | frequency, distance (two-tone blasts across still water) |
-| 🐦 Dawn chorus | activity, variety (seeded songbird phrase patterns; used by wake-up) |
+| 🐦 Dawn chorus | activity, variety — three species archetypes (whistler/chipper/triller) singing seeded phrase repertoires with curved pitch contours, envelope-tracked harmonics, breath noise and a built-in outdoor echo; used by wake-up |
 | 💧 Water drops | rate, tone, echo, trickle — stone plinks + Minnaert pool bloops through a feedback-delay cave, over a trickle bed |
 
 ## Features
@@ -75,6 +75,8 @@ The release build is signed with the checked-in development keystore at `signing
 - `audio/Elements.kt`, `audio/Elements2.kt` — parameterized ambient elements
 - `audio/Water.kt` — layered rain / ocean / water-drop models
 - `audio/Nature.kt` — campfire / wind / forest-night models
+- `audio/Thunder.kt` — rolling multi-peal distant-thunder model
+- `audio/Birdsong.kt` — three-species dawn-chorus model
 - `audio/Train.kt` — bogie-geometry night-train model
 - `audio/SimulatedFan.kt` — physically-inspired fan model
 - `audio/Space.kt` — stereo width + room diffusion, per-sound tilt filter

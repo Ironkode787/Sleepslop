@@ -258,75 +258,7 @@ class OwlElement : SoundGenerator {
 
 // ---------------------------------------------------------------------------
 
-/** Rolling thunder: enveloped, texture-modulated brown noise, far away. */
-class ThunderElement : SoundGenerator {
-    @Volatile private var rate = 0.4f
-    @Volatile private var distance = 0.6f
-
-    override fun setParam(id: String, value: Float) {
-        when (id) {
-            "rate" -> rate = value
-            "distance" -> distance = value
-        }
-    }
-
-    private val rnd = Random(59)
-    private val brownL = BrownFilter()
-    private val brownR = BrownFilter()
-    private val lpL = Biquad().lowpass(150f)
-    private val lpR = Biquad().lowpass(150f)
-    private var waiting = (SAMPLE_RATE * 8).toInt()
-    private var rumbling = false
-    private var pos = 0
-    private var dur = 1
-    private var strength = 1f
-    private var texture = 0.7f
-    private var textureTarget = 0.7f
-    private var textureCounter = 0
-
-    private fun nextWait(): Int {
-        val scale = (1.9f - 1.7f * rate).coerceAtLeast(0.15f)
-        return (SAMPLE_RATE * (15f + rnd.nextFloat() * 55f) * scale).toInt()
-    }
-
-    override fun render(left: FloatArray, right: FloatArray, frames: Int) {
-        for (i in 0 until frames) {
-            if (!rumbling) {
-                left[i] = 0f
-                right[i] = 0f
-                if (--waiting <= 0) {
-                    rumbling = true
-                    pos = 0
-                    dur = (SAMPLE_RATE * (3.5f + rnd.nextFloat() * 4.5f)).toInt()
-                    strength = 0.65f + rnd.nextFloat() * 0.35f
-                    val fc = 70f + (1f - distance) * 220f
-                    lpL.lowpass(fc)
-                    lpR.lowpass(fc)
-                }
-                continue
-            }
-            // The rumble's internal churn: a slow random walk.
-            if (--textureCounter <= 0) {
-                textureCounter = 1500
-                textureTarget = 0.35f + rnd.nextFloat() * 0.65f
-            }
-            texture += (textureTarget - texture) * 0.002f
-
-            val t = pos.toFloat() / dur
-            val attack = (t / 0.08f).coerceAtMost(1f)
-            val env = attack * (1f - t).pow(1.7f)
-            val gain = env * texture * strength * (1f - 0.55f * distance) * 1.6f
-            left[i] = lpL.process(brownL.next(rnd.bi())) * gain
-            right[i] = lpR.process(brownR.next(rnd.bi())) * gain
-            if (++pos >= dur) {
-                rumbling = false
-                waiting = nextWait()
-            }
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
+// ThunderElement was replaced by ThunderV2 in Thunder.kt (rolling multi-peal strikes).
 
 /** Wind chimes: pentatonic two-partial tones struck by a gusting breeze. */
 class ChimesElement : SoundGenerator {

@@ -250,11 +250,13 @@ enum class Sound(
         ::WindV2,
     ),
     FOREST(
-        "Forest night", "🌲", "Cricket wash, katydids, and rare rustles",
+        "Forest night", "🌲", "Crickets, peepers, a far owl, a small brook",
         Category.MIX,
         listOf(
             Param("life", "Life", 0f, 1f, 0.5f),
             Param("breeze", "Breeze", 0f, 1f, 0.35f),
+            Param("voices", "Night voices", 0f, 1f, 0.4f),
+            Param("water", "Stream", 0f, 1f, 0.25f),
         ),
         ::ForestNightV2,
     ),
@@ -323,13 +325,13 @@ enum class Sound(
         ::OwlElement,
     ),
     THUNDER(
-        "Distant thunder", "⛈️", "Slow rumbles rolling over the horizon",
+        "Distant thunder", "⛈️", "Strikes that roll and resurge across the sky",
         Category.ELEMENT,
         listOf(
             Param("rate", "Storm activity", 0f, 1f, 0.4f),
             Param("distance", "Distance", 0f, 1f, 0.6f),
         ),
-        ::ThunderElement,
+        ::ThunderV2,
     ),
     CHIMES(
         "Wind chimes", "🎐", "Pentatonic strikes on a breeze",
@@ -403,6 +405,6 @@ enum class Sound(
             Param("activity", "Activity", 0f, 1f, 0.5f),
             Param("variety", "Variety", 0f, 1f, 0.5f),
         ),
-        ::BirdsongElement,
+        ::BirdsongV2,
     ),
 }
