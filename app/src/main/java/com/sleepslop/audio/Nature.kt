@@ -1073,10 +1073,12 @@ private class NatPeeper(seed: Int) {
  *    resolvable spring peepers calling in bouts, a distant blurred peeper
  *    chorus that rises with the slider, and a far owl that delivers a soft
  *    two-hoot phrase every couple of minutes through heavy air absorption.
- *  - **Stream** (`water`) — a small brook off to one side: two burbling
- *    bandpass streams with fast independent level flutter, plus occasional
- *    rising "glug" bubbles, all under a gentle absorption lowpass and a slow
- *    level wander so it never sounds like a fountain pump.
+ *  - **Stream** (`water`) — a granular brook off to one side: a 1.7 kHz
+ *    sparkle band and a 430 Hz gurgle band, each amplitude-modulated by
+ *    Poisson micro-grain envelopes (hundreds/s and tens/s respectively —
+ *    water's crackling texture lives at those rates, not in a slow wobble),
+ *    plus up to 16/s little Minnaert bubbles whose pitch rises as they
+ *    collapse, all under an absorption lowpass and a slow level wander.
  *  - **Rare one-off events** — every 1–3 min (scaled by `life`), one of: a twig
  *    snap (a single dull low click), an animal rustle (0.3–0.8 s of scuffling
  *    foliage with an irregular internal envelope), or a lonely night-bird note
@@ -1149,25 +1151,37 @@ class ForestNightV2 : SoundGenerator {
     private var owlPanR = 0.7f
 
     // --- stream ------------------------------------------------------------------
-    private val brookBp1L = Biquad().bandpass(950f, 1.1f)
-    private val brookBp1R = Biquad().bandpass(1000f, 1.1f)
-    private val brookBp2L = Biquad().bandpass(1850f, 1.3f)
-    private val brookBp2R = Biquad().bandpass(1930f, 1.3f)
-    private val brookLpL = Biquad().lowpass(3200f, 0.7f)
-    private val brookLpR = Biquad().lowpass(3100f, 0.7f)
-    private val brookLevel = NatWander(361, 0.78f, 1.18f, 6f, 16f, 5f)
-    private var burble1 = 0.5f
-    private var burble1T = 0.5f
-    private var burble2 = 0.5f
-    private var burble2T = 0.5f
-    private val kBurble = 1f - exp(-1f / (0.020f * SAMPLE_RATE))
-    private var glugCountdown = (2f * SAMPLE_RATE).toInt()
-    private var glugPos = 0
-    private var glugLen = 0
-    private var glugPhase = 0.0
-    private var glugInc = 0.0
-    private var glugGlide = 1.0
-    private var glugAmp = 0f
+    // Water's texture is granular: its bands are amplitude-modulated by
+    // hundreds of sub-millisecond Poisson grain envelopes per second (the
+    // sparkle), tens per second (the gurgle) — not by a slow wobble, which
+    // reads as a fan. Grain sums are floored and capped so the Poisson tail
+    // can't spike (see WaterDropsV2 for the original of this trick).
+    private val brookHiL = Biquad().bandpass(1650f, 1.0f)
+    private val brookHiR = Biquad().bandpass(1760f, 1.0f)
+    private val brookLoL = Biquad().bandpass(430f, 1.8f)
+    private val brookLoR = Biquad().bandpass(465f, 1.8f)
+    private val brookLpL = Biquad().lowpass(3400f, 0.7f)
+    private val brookLpR = Biquad().lowpass(3300f, 0.7f)
+    private val brookLevel = NatWander(361, 0.80f, 1.15f, 6f, 16f, 5f)
+    private var gEnvFL = 0f
+    private var gEnvFR = 0f
+    private var gEnvSL = 0f
+    private var gEnvSR = 0f
+    private val gDecF = exp(-1f / (0.0009f * SAMPLE_RATE))
+    private val gDecS = exp(-1f / (0.006f * SAMPLE_RATE))
+    private var grainProbHi = 0f
+    private var grainProbLo = 0f
+    // Little Minnaert bubbles: a collapsing bubble's resonance rises. These
+    // chirps are what the ear identifies as *liquid*.
+    private val bubPhase = DoubleArray(N_BUBBLES)
+    private val bubInc = DoubleArray(N_BUBBLES)
+    private val bubGlide = DoubleArray(N_BUBBLES)
+    private val bubEnv = FloatArray(N_BUBBLES)
+    private val bubDecay = FloatArray(N_BUBBLES)
+    private val bubAtk = IntArray(N_BUBBLES)
+    private val bubGainL = FloatArray(N_BUBBLES)
+    private val bubGainR = FloatArray(N_BUBBLES)
+    private var bubProb = 0f
     // The brook sits off to one side of the scene.
     private val brookPanL = cos(0.68f)
     private val brookPanR = sin(0.68f)
@@ -1277,10 +1291,11 @@ class ForestNightV2 : SoundGenerator {
         peepWashGain = PEEP_WASH_GAIN * ((voxS - 0.25f) / 0.75f).coerceIn(0f, 1f) *
             peepWashThrob.value
 
-        // Brook burble targets renew a few times a second.
-        if (rnd.nextFloat() < 0.035f) burble1T = rnd.nextFloat()
-        if (rnd.nextFloat() < 0.035f) burble2T = rnd.nextFloat()
-        // sqrt curve: the stream is already clearly present at the 0.25 default.
+        // Brook densities scale with flow; the gain uses a sqrt curve so the
+        // stream is already clearly present at the 0.25 default.
+        grainProbHi = (250f + 700f * watS) / SAMPLE_RATE
+        grainProbLo = (25f + 70f * watS) / SAMPLE_RATE
+        bubProb = (3f + 13f * watS) / SAMPLE_RATE
         brookGain = BROOK_GAIN * sqrt(watS) * brookLevel.value
     }
 
@@ -1416,34 +1431,66 @@ class ForestNightV2 : SoundGenerator {
 
             // --- stream -----------------------------------------------------------
             if (watS > 0.01f) {
-                burble1 += (burble1T - burble1) * kBurble
-                burble2 += (burble2T - burble2) * kBurble
-                val b1 = 0.35f + 0.90f * burble1
-                val b2 = 0.30f + 0.80f * burble2
-                var bl = brookBp1L.process(rnd.nbi()) * b1 + brookBp2L.process(rnd.nbi()) * b2 * 0.8f
-                var br = brookBp1R.process(rnd.nbi()) * b1 + brookBp2R.process(rnd.nbi()) * b2 * 0.8f
+                // Poisson micro-grain envelopes: fast pair sparkles, slow pair
+                // gurgles. Each impulse lands with a random stereo split.
+                if (rnd.nextFloat() < grainProbHi) {
+                    val a = 0.4f + 0.6f * rnd.nextFloat()
+                    val pw = rnd.nextFloat()
+                    gEnvFL += a * pw
+                    gEnvFR += a * (1f - pw)
+                }
+                if (rnd.nextFloat() < grainProbLo) {
+                    val a = 0.5f + 0.5f * rnd.nextFloat()
+                    val pw = rnd.nextFloat()
+                    gEnvSL += a * pw
+                    gEnvSR += a * (1f - pw)
+                }
+                gEnvFL *= gDecF
+                gEnvFR *= gDecF
+                gEnvSL *= gDecS
+                gEnvSR *= gDecS
+                val mhL = (0.45f + 1.1f * gEnvFL).coerceAtMost(1.9f)
+                val mhR = (0.45f + 1.1f * gEnvFR).coerceAtMost(1.9f)
+                val mlL = (0.30f + 1.5f * gEnvSL).coerceAtMost(1.7f)
+                val mlR = (0.30f + 1.5f * gEnvSR).coerceAtMost(1.7f)
+                var bl = brookHiL.process(rnd.nbi()) * mhL + brookLoL.process(rnd.nbi()) * mlL * 0.85f
+                var br = brookHiR.process(rnd.nbi()) * mhR + brookLoR.process(rnd.nbi()) * mlR * 0.85f
 
-                // Rising glug bubbles.
-                if (glugPos < glugLen) {
-                    glugPhase += glugInc
-                    glugInc *= glugGlide
-                    if (glugPhase > NT_TWO_PI) glugPhase -= NT_TWO_PI
-                    val u = glugPos.toFloat() / glugLen
-                    val e = (u / 0.05f).coerceAtMost(1f) * (1f - u).pow(2.2f)
-                    val g = sin(glugPhase).toFloat() * e * glugAmp
-                    bl += g
-                    br += g * 0.8f
-                    glugPos++
-                } else if (--glugCountdown <= 0) {
-                    glugCountdown = ((0.8f + rnd.nextFloat() * 3.5f) / watS.coerceAtLeast(0.15f) *
-                        SAMPLE_RATE).toInt()
-                    glugLen = ((0.055f + rnd.nextFloat() * 0.055f) * SAMPLE_RATE).toInt()
-                    glugPos = 0
-                    glugPhase = 0.0
-                    val f0 = 260.0 + rnd.nextDouble() * 260.0
-                    glugInc = NT_TWO_PI * f0 / SAMPLE_RATE
-                    glugGlide = exp(ln(1.35) / glugLen)
-                    glugAmp = 0.30f + rnd.nextFloat() * 0.35f
+                // Minnaert bubbles: pitch rises as each bubble collapses.
+                if (rnd.nextFloat() < bubProb) {
+                    var slot = -1
+                    for (k in 0 until N_BUBBLES) if (bubEnv[k] < 0.001f) { slot = k; break }
+                    if (slot >= 0) {
+                        bubPhase[slot] = 0.0
+                        // Log-uniform 400..1600 Hz; big (low) bubbles are fuller.
+                        val f = 400.0 * Math.exp(rnd.nextDouble() * LN4)
+                        bubInc[slot] = NT_TWO_PI * f / SAMPLE_RATE
+                        val decSec = 0.015f + rnd.nextFloat() * 0.045f
+                        bubDecay[slot] = exp(-1f / (decSec * SAMPLE_RATE * 0.35f))
+                        bubGlide[slot] = Math.exp(
+                            Math.log(1.25 + rnd.nextDouble() * 0.40) / (decSec * SAMPLE_RATE))
+                        bubEnv[slot] = (0.35f + rnd.nextFloat() * 0.55f) *
+                            (600.0 / f).toFloat().pow(0.30f)
+                        bubAtk[slot] = (0.002f * SAMPLE_RATE).toInt()
+                        val bp = rnd.nextFloat()
+                        bubGainL[slot] = 0.4f + 0.6f * bp
+                        bubGainR[slot] = 0.4f + 0.6f * (1f - bp)
+                    }
+                }
+                for (k in 0 until N_BUBBLES) {
+                    if (bubEnv[k] < 0.001f) continue
+                    bubPhase[k] += bubInc[k]
+                    bubInc[k] *= bubGlide[k]
+                    if (bubPhase[k] > NT_TWO_PI) bubPhase[k] -= NT_TWO_PI
+                    var e = bubEnv[k]
+                    if (bubAtk[k] > 0) {
+                        bubAtk[k]--
+                        e *= 1f - bubAtk[k] / (0.002f * SAMPLE_RATE)
+                    }
+                    val bs = sin(bubPhase[k]).toFloat() * e
+                    bl += bs * bubGainL[k]
+                    br += bs * bubGainR[k]
+                    bubEnv[k] *= bubDecay[k]
                 }
 
                 l += brookLpL.process(bl) * brookGain * brookPanL
@@ -1533,5 +1580,7 @@ class ForestNightV2 : SoundGenerator {
         const val AIR_GAIN = 0.16f
         const val PEEP_WASH_GAIN = 0.085f
         const val BROOK_GAIN = 0.26f
+        const val N_BUBBLES = 6
+        const val LN4 = 1.3862943611198906
     }
 }
